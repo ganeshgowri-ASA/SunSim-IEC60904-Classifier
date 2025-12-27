@@ -98,40 +98,153 @@ class Manufacturer(Base):
     __tablename__ = 'manufacturers'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    manufacturer_id = Column(String(50), unique=True)  # Short identifier (e.g., 'pasan', 'halm')
     name = Column(String(255), nullable=False, unique=True)
     country = Column(String(100))
     website = Column(String(255))
     contact_email = Column(String(255))
     contact_phone = Column(String(50))
+    founded_year = Column(Integer)
+    specialization = Column(Text)  # Primary focus area
+
+    # Quality metrics (typical values)
+    typical_drift_percent = Column(Float)
+    typical_repeatability_percent = Column(Float)
+    uv_coverage = Column(Boolean, default=True)
+    spectral_range_min_nm = Column(Integer, default=300)
+    spectral_range_max_nm = Column(Integer, default=1200)
+
     notes = Column(Text)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     simulators = relationship("Simulator", back_populates="manufacturer")
+    models = relationship("ManufacturerModel", back_populates="manufacturer",
+                         cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_manufacturer_id', 'manufacturer_id'),
+    )
 
     def __repr__(self):
         return f"<Manufacturer(name='{self.name}')>"
 
 
+class ManufacturerModel(Base):
+    """Manufacturer simulator models catalog."""
+    __tablename__ = 'manufacturer_models'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manufacturer_db_id = Column(Integer, ForeignKey('manufacturers.id'), nullable=False)
+    model_id = Column(String(100), nullable=False)  # Short identifier
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+
+    # Type information
+    simulator_type = Column(String(50))  # 'pulsed_xenon', 'led_steady_state', etc.
+    lamp_type = Column(String(100))
+
+    # Test area capabilities (stored as JSON array)
+    test_area_cm2 = Column(JSON)  # e.g., [156, 210, 330]
+
+    # Irradiance specifications
+    irradiance_min = Column(Float)
+    irradiance_max = Column(Float)
+    irradiance_unit = Column(String(20), default="W/m2")
+
+    # Flash specifications (for pulsed systems)
+    flash_duration_min_ms = Column(Float)
+    flash_duration_max_ms = Column(Float)
+    repetition_rate_hz = Column(Float)
+
+    # Typical classification per IEC 60904-9
+    typical_spectral_class = Column(String(10))
+    typical_uniformity_class = Column(String(10))
+    typical_temporal_class = Column(String(10))
+
+    # Performance specifications
+    drift_percent = Column(Float)
+    repeatability_percent = Column(Float)
+    uv_coverage = Column(Boolean, default=True)
+    spectral_range_min_nm = Column(Integer)
+    spectral_range_max_nm = Column(Integer)
+    tunable_spectrum = Column(Boolean, default=False)
+
+    notes = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    manufacturer = relationship("Manufacturer", back_populates="models")
+
+    __table_args__ = (
+        Index('idx_model_manufacturer', 'manufacturer_db_id'),
+        UniqueConstraint('manufacturer_db_id', 'model_id', name='uq_manufacturer_model'),
+    )
+
+    def __repr__(self):
+        return f"<ManufacturerModel(name='{self.name}')>"
+
+
 class ReferenceModule(Base):
-    """Reference modules used for calibration and testing."""
+    """Reference modules used for calibration and testing per IEC 60904-2/4."""
     __tablename__ = 'reference_modules'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     serial_number = Column(String(100), nullable=False, unique=True)
-    module_type = Column(String(100))  # e.g., 'c-Si', 'mc-Si', 'CdTe', etc.
+    module_type = Column(String(100))  # 'mono_si', 'multi_si', 'perc', 'topcon', 'hjt', etc.
     manufacturer = Column(String(255))
-    calibration_date = Column(DateTime)
-    calibration_lab = Column(String(255))
+    model = Column(String(255))
+
+    # Reference level (IEC 60904-2 hierarchy)
+    reference_level = Column(String(50))  # 'primary', 'secondary', 'working', 'production'
+
+    # Electrical characteristics at STC
     isc_stc = Column(Float)  # Short-circuit current at STC (A)
     voc_stc = Column(Float)  # Open-circuit voltage at STC (V)
     pmax_stc = Column(Float)  # Maximum power at STC (W)
-    area = Column(Float)  # Active area (m²)
+    impp_stc = Column(Float)  # Current at MPP (A)
+    vmpp_stc = Column(Float)  # Voltage at MPP (V)
+    ff_percent = Column(Float)  # Fill factor (%)
+
+    # Physical characteristics
+    area_cm2 = Column(Float)  # Active area (cm²)
+    cell_count = Column(Integer, default=1)
+
+    # Temperature coefficients
+    alpha_isc = Column(Float)  # Isc temp coeff (%/K)
+    beta_voc = Column(Float)  # Voc temp coeff (%/K)
+    gamma_pmax = Column(Float)  # Pmax temp coeff (%/K)
+
+    # Spectral response data
     spectral_response = Column(JSON)  # Spectral response data
-    temperature_coefficient = Column(Float)  # %/°C
-    uncertainty = Column(Float)  # Calibration uncertainty (%)
+    spectral_mismatch_factor = Column(Float, default=1.0)
+
+    # Calibration information
+    calibration_date = Column(DateTime)
+    calibration_expiry = Column(DateTime)
+    calibration_lab = Column(String(255))
+    lab_accreditation = Column(String(100))  # 'ISO 17025', 'NVLAP', etc.
+    accreditation_number = Column(String(100))
     certificate_number = Column(String(100))
+    calibration_method = Column(String(100), default="IEC 60904-2")
+
+    # Uncertainty (IEC 60904-4)
+    uncertainty_percent = Column(Float)  # Expanded uncertainty (k=2)
+    coverage_factor = Column(Float, default=2.0)
+
+    # Traceability chain (JSON array of calibration labs)
+    traceability_chain = Column(JSON)
+
+    # Drift monitoring
+    last_drift_check = Column(DateTime)
+    current_drift_isc_percent = Column(Float)
+    current_drift_pmax_percent = Column(Float)
+    drift_status = Column(String(50))  # 'stable', 'drifting', 'out_of_spec'
+
     notes = Column(Text)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -139,9 +252,107 @@ class ReferenceModule(Base):
 
     # Relationships
     measurements = relationship("Measurement", back_populates="reference_module")
+    calibration_history = relationship("CalibrationRecord", back_populates="reference_module",
+                                       cascade="all, delete-orphan")
+    drift_records = relationship("DriftRecord", back_populates="reference_module",
+                                cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_reference_serial', 'serial_number'),
+        Index('idx_reference_level', 'reference_level'),
+        Index('idx_reference_active', 'is_active'),
+    )
 
     def __repr__(self):
-        return f"<ReferenceModule(serial='{self.serial_number}')>"
+        return f"<ReferenceModule(serial='{self.serial_number}', level='{self.reference_level}')>"
+
+
+class CalibrationRecord(Base):
+    """Historical calibration records for reference modules."""
+    __tablename__ = 'calibration_records'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    reference_module_id = Column(Integer, ForeignKey('reference_modules.id'), nullable=False)
+
+    certificate_number = Column(String(100), nullable=False)
+    calibration_date = Column(DateTime, nullable=False)
+    expiration_date = Column(DateTime)
+    calibration_lab = Column(String(255))
+    lab_accreditation = Column(String(100))
+    accreditation_number = Column(String(100))
+    calibration_method = Column(String(100))
+
+    # Measured values at calibration
+    isc_calibrated = Column(Float)
+    voc_calibrated = Column(Float)
+    pmax_calibrated = Column(Float)
+
+    # Uncertainty
+    uncertainty_percent = Column(Float)
+    coverage_factor = Column(Float, default=2.0)
+
+    # Traceability
+    traceability_chain = Column(JSON)
+
+    # Environmental conditions during calibration
+    temperature_c = Column(Float)
+    irradiance_wm2 = Column(Float)
+
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    reference_module = relationship("ReferenceModule", back_populates="calibration_history")
+
+    __table_args__ = (
+        Index('idx_calibration_module', 'reference_module_id'),
+        Index('idx_calibration_date', 'calibration_date'),
+    )
+
+    def __repr__(self):
+        return f"<CalibrationRecord(cert='{self.certificate_number}')>"
+
+
+class DriftRecord(Base):
+    """Drift measurement records for reference modules."""
+    __tablename__ = 'drift_records'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    reference_module_id = Column(Integer, ForeignKey('reference_modules.id'), nullable=False)
+
+    measurement_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    # Measured values
+    isc_measured = Column(Float)
+    voc_measured = Column(Float)
+    pmax_measured = Column(Float)
+
+    # Test conditions
+    irradiance_wm2 = Column(Float)
+    temperature_c = Column(Float)
+    spectral_mismatch = Column(Float, default=1.0)
+
+    # Calculated drift (vs reference values)
+    isc_drift_percent = Column(Float)
+    voc_drift_percent = Column(Float)
+    pmax_drift_percent = Column(Float)
+
+    # Status
+    within_limits = Column(Boolean, default=True)
+
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    reference_module = relationship("ReferenceModule", back_populates="drift_records")
+
+    __table_args__ = (
+        Index('idx_drift_module', 'reference_module_id'),
+        Index('idx_drift_date', 'measurement_date'),
+    )
+
+    def __repr__(self):
+        return f"<DriftRecord(date='{self.measurement_date}', pmax_drift={self.pmax_drift_percent})>"
 
 
 class Simulator(Base):

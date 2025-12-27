@@ -1,0 +1,795 @@
+{
+    "manufacturers": [
+        {
+            "id": "pasan",
+            "name": "PASAN (Meyer Burger)",
+            "country": "Switzerland",
+            "website": "https://www.meyerburger.com",
+            "founded": 1987,
+            "specialization": "High-precision flash testers, inline measurement",
+            "models": [
+                {
+                    "id": "sunsim-3c-iiib",
+                    "name": "SunSim 3C IIIb",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Multi-flash solar simulator with AAA classification",
+                    "test_area_cm2": [156, 210, 330],
+                    "irradiance_range": {"min": 100, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 1, "max": 30},
+                    "repetition_rate_hz": 1.0,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.1,
+                        "repeatability_percent": 0.15,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200}
+                    }
+                },
+                {
+                    "id": "highlight-led",
+                    "name": "HighLIGHT LED",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED Array",
+                    "description": "LED-based solar simulator for laboratory testing",
+                    "test_area_cm2": [156, 210],
+                    "irradiance_range": {"min": 50, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 10, "max": 100},
+                    "repetition_rate_hz": 10.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.05,
+                        "repeatability_percent": 0.1,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "halm",
+            "name": "HALM Elektronik",
+            "country": "Germany",
+            "website": "https://www.halm.de",
+            "founded": 1992,
+            "specialization": "Cell and module testing equipment",
+            "models": [
+                {
+                    "id": "cetispv-ctl2",
+                    "name": "cetisPV-CTL2",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Cell tester with long pulse capability",
+                    "test_area_cm2": [156, 166, 182, 210],
+                    "irradiance_range": {"min": 200, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 5, "max": 50},
+                    "repetition_rate_hz": 2.0,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.12,
+                        "repeatability_percent": 0.18,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                },
+                {
+                    "id": "cetispv-iuct-led",
+                    "name": "cetisPV-IUCT-LED",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED Matrix",
+                    "description": "LED-based IV curve tracer with excellent stability",
+                    "test_area_cm2": [156, 166, 182],
+                    "irradiance_range": {"min": 100, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 20, "max": 200},
+                    "repetition_rate_hz": 5.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.08,
+                        "repeatability_percent": 0.12,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "wavelabs",
+            "name": "Wavelabs Solar Metrology",
+            "country": "Germany",
+            "website": "https://www.wavelabs.de",
+            "founded": 2010,
+            "specialization": "LED-based solar simulators",
+            "models": [
+                {
+                    "id": "sinus-220",
+                    "name": "SINUS-220",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED Multi-Channel",
+                    "description": "Class AAA LED solar simulator with tunable spectrum",
+                    "test_area_cm2": [156, 166],
+                    "irradiance_range": {"min": 50, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 50, "max": 500},
+                    "repetition_rate_hz": 20.0,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.03,
+                        "repeatability_percent": 0.05,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200},
+                        "tunable_spectrum": true
+                    }
+                },
+                {
+                    "id": "sinus-3000-adv",
+                    "name": "SINUS-3000 ADV",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED Multi-Channel",
+                    "description": "Advanced large-area LED solar simulator",
+                    "test_area_cm2": [210, 330, 440],
+                    "irradiance_range": {"min": 50, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 50, "max": 1000},
+                    "repetition_rate_hz": 10.0,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.02,
+                        "repeatability_percent": 0.04,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200},
+                        "tunable_spectrum": true
+                    }
+                }
+            ]
+        },
+        {
+            "id": "sinton",
+            "name": "Sinton Instruments",
+            "country": "USA",
+            "website": "https://www.sintoninstruments.com",
+            "founded": 1992,
+            "specialization": "Flash testing and lifetime measurement",
+            "models": [
+                {
+                    "id": "fct-450",
+                    "name": "FCT-450",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Flash cell tester for production environment",
+                    "test_area_cm2": [156, 166, 182],
+                    "irradiance_range": {"min": 100, "max": 1000, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 2, "max": 20},
+                    "repetition_rate_hz": 3.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.2,
+                        "repeatability_percent": 0.25,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                },
+                {
+                    "id": "mgst-400",
+                    "name": "MGST-400",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Module geometry sun tester",
+                    "test_area_cm2": [330, 440, 600],
+                    "irradiance_range": {"min": 100, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 5, "max": 30},
+                    "repetition_rate_hz": 1.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.3,
+                        "repeatability_percent": 0.35,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "gsola",
+            "name": "G.Sola",
+            "country": "China",
+            "website": "https://www.gsola.com",
+            "founded": 2008,
+            "specialization": "High-throughput production testing",
+            "models": [
+                {
+                    "id": "gsct-3000",
+                    "name": "GSCT-3000",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "High-speed cell tester for mass production",
+                    "test_area_cm2": [156, 166, 182, 210],
+                    "irradiance_range": {"min": 200, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 3, "max": 25},
+                    "repetition_rate_hz": 4.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.25,
+                        "repeatability_percent": 0.3,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                },
+                {
+                    "id": "gsmt-h1",
+                    "name": "GSMT-H1",
+                    "type": "led_pulsed",
+                    "lamp_type": "LED Hybrid",
+                    "description": "Hybrid LED module tester",
+                    "test_area_cm2": [330, 440],
+                    "irradiance_range": {"min": 100, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 10, "max": 100},
+                    "repetition_rate_hz": 2.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.15,
+                        "repeatability_percent": 0.2,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "newport",
+            "name": "Newport Oriel",
+            "country": "USA",
+            "website": "https://www.newport.com",
+            "founded": 1969,
+            "specialization": "Research-grade solar simulators",
+            "models": [
+                {
+                    "id": "sol3a-aaa",
+                    "name": "Sol3A Class AAA",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Research-grade Class AAA solar simulator",
+                    "test_area_cm2": [100, 156, 200],
+                    "irradiance_range": {"min": 100, "max": 1500, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.5,
+                        "repeatability_percent": 0.3,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 280, "max": 1600}
+                    }
+                },
+                {
+                    "id": "lcs-100",
+                    "name": "LCS-100",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Small area research solar simulator",
+                    "test_area_cm2": [25, 50],
+                    "irradiance_range": {"min": 50, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.8,
+                        "repeatability_percent": 0.5,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 280, "max": 1600}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "abet",
+            "name": "Abet Technologies",
+            "country": "USA",
+            "website": "https://www.abet-technologies.com",
+            "founded": 1999,
+            "specialization": "Solar simulators for research and testing",
+            "models": [
+                {
+                    "id": "sun-3000-aaa",
+                    "name": "Sun 3000 Class AAA",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Large area Class AAA solar simulator",
+                    "test_area_cm2": [200, 330, 400],
+                    "irradiance_range": {"min": 100, "max": 1300, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.6,
+                        "repeatability_percent": 0.4,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 280, "max": 1400}
+                    }
+                },
+                {
+                    "id": "sun-2000-led",
+                    "name": "Sun 2000 LED",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED Array",
+                    "description": "LED-based compact solar simulator",
+                    "test_area_cm2": [100, 156],
+                    "irradiance_range": {"min": 50, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.1,
+                        "repeatability_percent": 0.15,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "avalon",
+            "name": "Avalon Test Equipment",
+            "country": "USA",
+            "website": "https://www.avalontestequipment.com",
+            "founded": 2005,
+            "specialization": "Production testing solutions",
+            "models": [
+                {
+                    "id": "sunflash-1000",
+                    "name": "SunFlash 1000",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Production-grade flash tester",
+                    "test_area_cm2": [156, 182, 210],
+                    "irradiance_range": {"min": 200, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 2, "max": 15},
+                    "repetition_rate_hz": 3.5,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.3,
+                        "repeatability_percent": 0.35,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "berger",
+            "name": "Berger Lichttechnik",
+            "country": "Germany",
+            "website": "https://www.berger-lichttechnik.de",
+            "founded": 1985,
+            "specialization": "Precision lighting and simulation",
+            "models": [
+                {
+                    "id": "pss-10",
+                    "name": "PSS-10 Solar Simulator",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Laboratory solar simulator with high precision",
+                    "test_area_cm2": [100, 156],
+                    "irradiance_range": {"min": 100, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.4,
+                        "repeatability_percent": 0.3,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 290, "max": 1400}
+                    }
+                },
+                {
+                    "id": "pss-flash",
+                    "name": "PSS-Flash",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "High-speed flash solar simulator",
+                    "test_area_cm2": [156, 182],
+                    "irradiance_range": {"min": 200, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 1, "max": 20},
+                    "repetition_rate_hz": 2.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.2,
+                        "repeatability_percent": 0.25,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "nisshinbo",
+            "name": "Nisshinbo",
+            "country": "Japan",
+            "website": "https://www.nisshinbo.co.jp",
+            "founded": 1907,
+            "specialization": "Industrial testing equipment",
+            "models": [
+                {
+                    "id": "pec-l15",
+                    "name": "PEC-L15",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "High-precision cell tester for R&D",
+                    "test_area_cm2": [156, 166, 182],
+                    "irradiance_range": {"min": 100, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 5, "max": 30},
+                    "repetition_rate_hz": 2.0,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.1,
+                        "repeatability_percent": 0.12,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                },
+                {
+                    "id": "spf-50",
+                    "name": "SPF-50",
+                    "type": "pulsed_xenon",
+                    "lamp_type": "Xenon Flash",
+                    "description": "Production flash tester",
+                    "test_area_cm2": [156, 210],
+                    "irradiance_range": {"min": 200, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 3, "max": 20},
+                    "repetition_rate_hz": 4.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.15,
+                        "repeatability_percent": 0.2,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "eternal-sun",
+            "name": "Eternal Sun",
+            "country": "Netherlands",
+            "website": "https://www.eternalsun.com",
+            "founded": 2010,
+            "specialization": "LED solar simulators for large modules",
+            "models": [
+                {
+                    "id": "spire-2430",
+                    "name": "Spire 2430 SLP",
+                    "type": "led_pulsed",
+                    "lamp_type": "LED Array",
+                    "description": "Large area LED solar simulator",
+                    "test_area_cm2": [440, 600, 800],
+                    "irradiance_range": {"min": 50, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": {"min": 20, "max": 200},
+                    "repetition_rate_hz": 5.0,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.05,
+                        "repeatability_percent": 0.08,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "sciencetech",
+            "name": "Sciencetech Inc",
+            "country": "Canada",
+            "website": "https://www.sciencetech.ca",
+            "founded": 1985,
+            "specialization": "Research solar simulators",
+            "models": [
+                {
+                    "id": "ss150-aaa",
+                    "name": "SS150 Class AAA",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "High-performance research solar simulator",
+                    "test_area_cm2": [50, 100, 150],
+                    "irradiance_range": {"min": 100, "max": 1500, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A+",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.5,
+                        "repeatability_percent": 0.3,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 280, "max": 1700}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "enlitech",
+            "name": "Enlitech",
+            "country": "Taiwan",
+            "website": "https://www.enlitech.com",
+            "founded": 2008,
+            "specialization": "Optoelectronic measurement systems",
+            "models": [
+                {
+                    "id": "ss-f5-3a",
+                    "name": "SS-F5-3A",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Compact solar simulator with AAA classification",
+                    "test_area_cm2": [50, 100],
+                    "irradiance_range": {"min": 100, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.6,
+                        "repeatability_percent": 0.4,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                },
+                {
+                    "id": "ss-x100r",
+                    "name": "SS-X100R",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Large area research solar simulator",
+                    "test_area_cm2": [200, 300],
+                    "irradiance_range": {"min": 50, "max": 1300, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.7,
+                        "repeatability_percent": 0.5,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "eko",
+            "name": "EKO Instruments",
+            "country": "Japan",
+            "website": "https://www.eko-instruments.com",
+            "founded": 1927,
+            "specialization": "Precision meteorological and solar measurement",
+            "models": [
+                {
+                    "id": "ss-151k",
+                    "name": "SS-151K",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon Arc",
+                    "description": "Reference-grade solar simulator",
+                    "test_area_cm2": [100, 156],
+                    "irradiance_range": {"min": 100, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A+",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": 0.4,
+                        "repeatability_percent": 0.25,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1100}
+                    }
+                }
+            ]
+        },
+        {
+            "id": "custom",
+            "name": "Custom / Other",
+            "country": "Various",
+            "website": null,
+            "founded": null,
+            "specialization": "User-defined specifications",
+            "models": [
+                {
+                    "id": "custom-xenon",
+                    "name": "Custom Xenon Simulator",
+                    "type": "xenon_continuous",
+                    "lamp_type": "Xenon",
+                    "description": "User-defined xenon-based solar simulator",
+                    "test_area_cm2": [100, 156, 200, 330],
+                    "irradiance_range": {"min": 100, "max": 1200, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A",
+                        "temporal": "A"
+                    },
+                    "specifications": {
+                        "drift_percent": null,
+                        "repeatability_percent": null,
+                        "uv_coverage": true,
+                        "spectral_range_nm": {"min": 300, "max": 1200}
+                    }
+                },
+                {
+                    "id": "custom-led",
+                    "name": "Custom LED Simulator",
+                    "type": "led_steady_state",
+                    "lamp_type": "LED",
+                    "description": "User-defined LED-based solar simulator",
+                    "test_area_cm2": [100, 156, 200, 330],
+                    "irradiance_range": {"min": 50, "max": 1100, "unit": "W/m2"},
+                    "flash_duration_ms": null,
+                    "repetition_rate_hz": null,
+                    "typical_classification": {
+                        "spectral": "A",
+                        "uniformity": "A+",
+                        "temporal": "A+"
+                    },
+                    "specifications": {
+                        "drift_percent": null,
+                        "repeatability_percent": null,
+                        "uv_coverage": false,
+                        "spectral_range_nm": {"min": 350, "max": 1100}
+                    }
+                }
+            ]
+        }
+    ],
+    "lamp_types": {
+        "xenon_flash": {
+            "name": "Xenon Flash",
+            "description": "Pulsed xenon lamp for flash testing",
+            "advantages": ["High intensity", "Full spectrum", "Fast pulse"],
+            "disadvantages": ["Limited lifetime", "Heat generation", "Spectrum drift"],
+            "typical_lifetime_hours": 2000,
+            "spectral_coverage": "UV to NIR (280-1600nm)"
+        },
+        "xenon_continuous": {
+            "name": "Xenon Arc (Continuous)",
+            "description": "Continuous xenon arc lamp",
+            "advantages": ["Full spectrum", "Stable output", "Good AM1.5G match"],
+            "disadvantages": ["High power consumption", "Heat management", "Lamp aging"],
+            "typical_lifetime_hours": 1500,
+            "spectral_coverage": "UV to NIR (280-2500nm)"
+        },
+        "led_array": {
+            "name": "LED Array",
+            "description": "Multi-channel LED-based light source",
+            "advantages": ["Long lifetime", "Low heat", "Stable", "Tunable spectrum"],
+            "disadvantages": ["Limited UV", "Complex control", "Higher initial cost"],
+            "typical_lifetime_hours": 50000,
+            "spectral_coverage": "Blue to NIR (350-1100nm)"
+        },
+        "halogen": {
+            "name": "Halogen",
+            "description": "Tungsten-halogen lamp",
+            "advantages": ["Low cost", "Simple operation"],
+            "disadvantages": ["Poor spectral match", "High heat", "Short lifetime"],
+            "typical_lifetime_hours": 500,
+            "spectral_coverage": "Visible to NIR (400-2000nm)"
+        }
+    },
+    "classification_reference": {
+        "A+": {
+            "spectral_match": "0.875-1.125 (12.5%)",
+            "uniformity": "<=1%",
+            "temporal_sti": "<=0.5%",
+            "temporal_lti": "<=1%"
+        },
+        "A": {
+            "spectral_match": "0.75-1.25 (25%)",
+            "uniformity": "<=2%",
+            "temporal_sti": "<=2%",
+            "temporal_lti": "<=2%"
+        },
+        "B": {
+            "spectral_match": "0.6-1.4 (40%)",
+            "uniformity": "<=5%",
+            "temporal_sti": "<=5%",
+            "temporal_lti": "<=5%"
+        },
+        "C": {
+            "spectral_match": ">40%",
+            "uniformity": ">5%",
+            "temporal_sti": ">5%",
+            "temporal_lti": ">5%"
+        }
+    },
+    "metadata": {
+        "version": "1.0.0",
+        "last_updated": "2024-12-27",
+        "standard": "IEC 60904-9:2020 Ed.3",
+        "total_manufacturers": 15,
+        "total_models": 26
+    }
+}

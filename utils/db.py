@@ -1,100 +1,184 @@
 """
 Database utilities for SunSim-IEC60904-Classifier.
-Handles SQLite database operations for SPC and MSA data storage.
+Supports PostgreSQL (via DATABASE_URL) for production and SQLite for local development.
 """
 
-import sqlite3
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import pandas as pd
+from sqlalchemy import create_engine, text
+from sqlalchemy.pool import NullPool
 
 
-DB_PATH = Path(__file__).parent.parent / "data" / "sunsim.db"
+def get_database_url() -> str:
+    """Get database URL from environment or use SQLite fallback."""
+    database_url = os.environ.get('DATABASE_URL')
+
+    if database_url:
+        # Railway uses postgres:// but SQLAlchemy needs postgresql://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        return database_url
+    else:
+        # Local development fallback to SQLite
+        db_path = Path(__file__).parent.parent / "data" / "sunsim.db"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{db_path}"
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get database connection, creating directory if needed."""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+def get_engine():
+    """Get SQLAlchemy engine."""
+    database_url = get_database_url()
+    if database_url.startswith('sqlite'):
+        return create_engine(database_url, connect_args={"check_same_thread": False})
+    else:
+        return create_engine(database_url, poolclass=NullPool)
 
 
 def init_database():
     """Initialize database with required tables."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
+    database_url = get_database_url()
+    is_postgres = not database_url.startswith('sqlite')
 
-    # SPC Data table for control chart measurements
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS spc_data (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            simulator_id TEXT NOT NULL,
-            sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            parameter_name TEXT NOT NULL,
-            measured_value REAL NOT NULL,
-            ucl REAL,
-            lcl REAL,
-            cl REAL,
-            subgroup_number INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+    with engine.connect() as conn:
+        # SPC Data table for control chart measurements
+        if is_postgres:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS spc_data (
+                    id SERIAL PRIMARY KEY,
+                    simulator_id TEXT NOT NULL,
+                    sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    parameter_name TEXT NOT NULL,
+                    measured_value REAL NOT NULL,
+                    ucl REAL,
+                    lcl REAL,
+                    cl REAL,
+                    subgroup_number INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        else:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS spc_data (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    simulator_id TEXT NOT NULL,
+                    sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    parameter_name TEXT NOT NULL,
+                    measured_value REAL NOT NULL,
+                    ucl REAL,
+                    lcl REAL,
+                    cl REAL,
+                    subgroup_number INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
 
-    # MSA Studies table for Gage R&R data
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS msa_studies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            simulator_id TEXT NOT NULL,
-            study_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            study_name TEXT,
-            operator TEXT NOT NULL,
-            part_id TEXT NOT NULL,
-            trial INTEGER NOT NULL,
-            measured_value REAL NOT NULL,
-            grr_pct REAL,
-            repeatability_pct REAL,
-            reproducibility_pct REAL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        # MSA Studies table for Gage R&R data
+        if is_postgres:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS msa_studies (
+                    id SERIAL PRIMARY KEY,
+                    simulator_id TEXT NOT NULL,
+                    study_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    study_name TEXT,
+                    operator TEXT NOT NULL,
+                    part_id TEXT NOT NULL,
+                    trial INTEGER NOT NULL,
+                    measured_value REAL NOT NULL,
+                    grr_pct REAL,
+                    repeatability_pct REAL,
+                    reproducibility_pct REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        else:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS msa_studies (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    simulator_id TEXT NOT NULL,
+                    study_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    study_name TEXT,
+                    operator TEXT NOT NULL,
+                    part_id TEXT NOT NULL,
+                    trial INTEGER NOT NULL,
+                    measured_value REAL NOT NULL,
+                    grr_pct REAL,
+                    repeatability_pct REAL,
+                    reproducibility_pct REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
 
-    # Simulators table for reference
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS simulators (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            simulator_id TEXT UNIQUE NOT NULL,
-            name TEXT,
-            location TEXT,
-            classification TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        # Simulators table for reference
+        if is_postgres:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS simulators (
+                    id SERIAL PRIMARY KEY,
+                    simulator_id TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    location TEXT,
+                    classification TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        else:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS simulators (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    simulator_id TEXT UNIQUE NOT NULL,
+                    name TEXT,
+                    location TEXT,
+                    classification TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
 
-    # Capability history table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS capability_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            simulator_id TEXT NOT NULL,
-            parameter_name TEXT NOT NULL,
-            sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            cp REAL,
-            cpk REAL,
-            pp REAL,
-            ppk REAL,
-            usl REAL,
-            lsl REAL,
-            target REAL,
-            mean_value REAL,
-            std_dev REAL,
-            sample_size INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+        # Capability history table
+        if is_postgres:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS capability_history (
+                    id SERIAL PRIMARY KEY,
+                    simulator_id TEXT NOT NULL,
+                    parameter_name TEXT NOT NULL,
+                    sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    cp REAL,
+                    cpk REAL,
+                    pp REAL,
+                    ppk REAL,
+                    usl REAL,
+                    lsl REAL,
+                    target REAL,
+                    mean_value REAL,
+                    std_dev REAL,
+                    sample_size INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+        else:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS capability_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    simulator_id TEXT NOT NULL,
+                    parameter_name TEXT NOT NULL,
+                    sample_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    cp REAL,
+                    cpk REAL,
+                    pp REAL,
+                    ppk REAL,
+                    usl REAL,
+                    lsl REAL,
+                    target REAL,
+                    mean_value REAL,
+                    std_dev REAL,
+                    sample_size INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
 
 # SPC Data Functions
@@ -103,45 +187,52 @@ def insert_spc_data(simulator_id: str, parameter_name: str, measured_value: floa
                     lcl: Optional[float] = None, cl: Optional[float] = None,
                     sample_date: Optional[datetime] = None):
     """Insert a single SPC measurement."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
     if sample_date is None:
         sample_date = datetime.now()
 
-    cursor.execute("""
-        INSERT INTO spc_data (simulator_id, sample_date, parameter_name,
-                             measured_value, ucl, lcl, cl, subgroup_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (simulator_id, sample_date, parameter_name, measured_value, ucl, lcl, cl, subgroup_number))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO spc_data (simulator_id, sample_date, parameter_name,
+                                 measured_value, ucl, lcl, cl, subgroup_number)
+            VALUES (:simulator_id, :sample_date, :parameter_name, :measured_value,
+                    :ucl, :lcl, :cl, :subgroup_number)
+        """), {
+            "simulator_id": simulator_id,
+            "sample_date": sample_date,
+            "parameter_name": parameter_name,
+            "measured_value": measured_value,
+            "ucl": ucl,
+            "lcl": lcl,
+            "cl": cl,
+            "subgroup_number": subgroup_number
+        })
+        conn.commit()
 
 
 def insert_spc_batch(df: pd.DataFrame, simulator_id: str, parameter_name: str):
     """Insert batch of SPC measurements from DataFrame."""
-    conn = get_connection()
+    engine = get_engine()
 
-    for _, row in df.iterrows():
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO spc_data (simulator_id, sample_date, parameter_name,
-                                 measured_value, ucl, lcl, cl, subgroup_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            simulator_id,
-            row.get('sample_date', datetime.now()),
-            parameter_name,
-            row['measured_value'],
-            row.get('ucl'),
-            row.get('lcl'),
-            row.get('cl'),
-            row.get('subgroup_number', 1)
-        ))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        for _, row in df.iterrows():
+            conn.execute(text("""
+                INSERT INTO spc_data (simulator_id, sample_date, parameter_name,
+                                     measured_value, ucl, lcl, cl, subgroup_number)
+                VALUES (:simulator_id, :sample_date, :parameter_name, :measured_value,
+                        :ucl, :lcl, :cl, :subgroup_number)
+            """), {
+                "simulator_id": simulator_id,
+                "sample_date": row.get('sample_date', datetime.now()),
+                "parameter_name": parameter_name,
+                "measured_value": row['measured_value'],
+                "ucl": row.get('ucl'),
+                "lcl": row.get('lcl'),
+                "cl": row.get('cl'),
+                "subgroup_number": row.get('subgroup_number', 1)
+            })
+        conn.commit()
 
 
 def get_spc_data(simulator_id: Optional[str] = None,
@@ -149,53 +240,51 @@ def get_spc_data(simulator_id: Optional[str] = None,
                  start_date: Optional[datetime] = None,
                  end_date: Optional[datetime] = None) -> pd.DataFrame:
     """Retrieve SPC data with optional filters."""
-    conn = get_connection()
+    engine = get_engine()
 
     query = "SELECT * FROM spc_data WHERE 1=1"
-    params = []
+    params = {}
 
     if simulator_id:
-        query += " AND simulator_id = ?"
-        params.append(simulator_id)
+        query += " AND simulator_id = :simulator_id"
+        params["simulator_id"] = simulator_id
     if parameter_name:
-        query += " AND parameter_name = ?"
-        params.append(parameter_name)
+        query += " AND parameter_name = :parameter_name"
+        params["parameter_name"] = parameter_name
     if start_date:
-        query += " AND sample_date >= ?"
-        params.append(start_date)
+        query += " AND sample_date >= :start_date"
+        params["start_date"] = start_date
     if end_date:
-        query += " AND sample_date <= ?"
-        params.append(end_date)
+        query += " AND sample_date <= :end_date"
+        params["end_date"] = end_date
 
     query += " ORDER BY sample_date, subgroup_number"
 
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    with engine.connect() as conn:
+        df = pd.read_sql_query(text(query), conn, params=params)
     return df
 
 
 def get_spc_parameters() -> list:
     """Get list of unique parameter names in SPC data."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT parameter_name FROM spc_data ORDER BY parameter_name")
-    params = [row[0] for row in cursor.fetchall()]
-    conn.close()
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT DISTINCT parameter_name FROM spc_data ORDER BY parameter_name"))
+        params = [row[0] for row in result.fetchall()]
     return params
 
 
 def get_simulator_ids() -> list:
     """Get list of unique simulator IDs."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT DISTINCT simulator_id FROM spc_data
-        UNION
-        SELECT DISTINCT simulator_id FROM msa_studies
-        ORDER BY simulator_id
-    """)
-    ids = [row[0] for row in cursor.fetchall()]
-    conn.close()
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT DISTINCT simulator_id FROM spc_data
+            UNION
+            SELECT DISTINCT simulator_id FROM msa_studies
+            ORDER BY simulator_id
+        """))
+        ids = [row[0] for row in result.fetchall()]
     return ids if ids else ["SIM-001", "SIM-002", "SIM-003"]
 
 
@@ -205,94 +294,105 @@ def insert_msa_measurement(simulator_id: str, operator: str, part_id: str,
                            study_name: Optional[str] = None,
                            study_date: Optional[datetime] = None):
     """Insert a single MSA measurement."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
     if study_date is None:
         study_date = datetime.now()
 
-    cursor.execute("""
-        INSERT INTO msa_studies (simulator_id, study_date, study_name, operator,
-                                part_id, trial, measured_value)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (simulator_id, study_date, study_name, operator, part_id, trial, measured_value))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO msa_studies (simulator_id, study_date, study_name, operator,
+                                    part_id, trial, measured_value)
+            VALUES (:simulator_id, :study_date, :study_name, :operator,
+                    :part_id, :trial, :measured_value)
+        """), {
+            "simulator_id": simulator_id,
+            "study_date": study_date,
+            "study_name": study_name,
+            "operator": operator,
+            "part_id": part_id,
+            "trial": trial,
+            "measured_value": measured_value
+        })
+        conn.commit()
 
 
 def insert_msa_batch(df: pd.DataFrame, simulator_id: str, study_name: str):
     """Insert batch of MSA measurements from DataFrame."""
-    conn = get_connection()
-
+    engine = get_engine()
     study_date = datetime.now()
 
-    for _, row in df.iterrows():
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO msa_studies (simulator_id, study_date, study_name, operator,
-                                    part_id, trial, measured_value)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            simulator_id,
-            row.get('study_date', study_date),
-            study_name,
-            row['operator'],
-            row['part_id'],
-            row['trial'],
-            row['measured_value']
-        ))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        for _, row in df.iterrows():
+            conn.execute(text("""
+                INSERT INTO msa_studies (simulator_id, study_date, study_name, operator,
+                                        part_id, trial, measured_value)
+                VALUES (:simulator_id, :study_date, :study_name, :operator,
+                        :part_id, :trial, :measured_value)
+            """), {
+                "simulator_id": simulator_id,
+                "study_date": row.get('study_date', study_date),
+                "study_name": study_name,
+                "operator": row['operator'],
+                "part_id": row['part_id'],
+                "trial": row['trial'],
+                "measured_value": row['measured_value']
+            })
+        conn.commit()
 
 
 def update_msa_results(simulator_id: str, study_name: str,
                        grr_pct: float, repeatability_pct: float,
                        reproducibility_pct: float):
     """Update MSA study with calculated results."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
-    cursor.execute("""
-        UPDATE msa_studies
-        SET grr_pct = ?, repeatability_pct = ?, reproducibility_pct = ?
-        WHERE simulator_id = ? AND study_name = ?
-    """, (grr_pct, repeatability_pct, reproducibility_pct, simulator_id, study_name))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE msa_studies
+            SET grr_pct = :grr_pct, repeatability_pct = :repeatability_pct,
+                reproducibility_pct = :reproducibility_pct
+            WHERE simulator_id = :simulator_id AND study_name = :study_name
+        """), {
+            "grr_pct": grr_pct,
+            "repeatability_pct": repeatability_pct,
+            "reproducibility_pct": reproducibility_pct,
+            "simulator_id": simulator_id,
+            "study_name": study_name
+        })
+        conn.commit()
 
 
 def get_msa_data(simulator_id: Optional[str] = None,
                  study_name: Optional[str] = None) -> pd.DataFrame:
     """Retrieve MSA study data with optional filters."""
-    conn = get_connection()
+    engine = get_engine()
 
     query = "SELECT * FROM msa_studies WHERE 1=1"
-    params = []
+    params = {}
 
     if simulator_id:
-        query += " AND simulator_id = ?"
-        params.append(simulator_id)
+        query += " AND simulator_id = :simulator_id"
+        params["simulator_id"] = simulator_id
     if study_name:
-        query += " AND study_name = ?"
-        params.append(study_name)
+        query += " AND study_name = :study_name"
+        params["study_name"] = study_name
 
     query += " ORDER BY study_date, operator, part_id, trial"
 
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    with engine.connect() as conn:
+        df = pd.read_sql_query(text(query), conn, params=params)
     return df
 
 
 def get_msa_studies() -> list:
     """Get list of unique MSA study names."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT study_name FROM msa_studies WHERE study_name IS NOT NULL ORDER BY study_name")
-    studies = [row[0] for row in cursor.fetchall()]
-    conn.close()
+    engine = get_engine()
+    with engine.connect() as conn:
+        result = conn.execute(text(
+            "SELECT DISTINCT study_name FROM msa_studies WHERE study_name IS NOT NULL ORDER BY study_name"
+        ))
+        studies = [row[0] for row in result.fetchall()]
     return studies
 
 
@@ -302,81 +402,90 @@ def insert_capability_record(simulator_id: str, parameter_name: str,
                             usl: float, lsl: float, target: float,
                             mean_value: float, std_dev: float, sample_size: int):
     """Insert capability analysis record."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
-    cursor.execute("""
-        INSERT INTO capability_history (simulator_id, parameter_name, cp, cpk,
-                                       pp, ppk, usl, lsl, target, mean_value,
-                                       std_dev, sample_size)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (simulator_id, parameter_name, cp, cpk, pp, ppk, usl, lsl, target,
-          mean_value, std_dev, sample_size))
-
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text("""
+            INSERT INTO capability_history (simulator_id, parameter_name, cp, cpk,
+                                           pp, ppk, usl, lsl, target, mean_value,
+                                           std_dev, sample_size)
+            VALUES (:simulator_id, :parameter_name, :cp, :cpk, :pp, :ppk, :usl,
+                    :lsl, :target, :mean_value, :std_dev, :sample_size)
+        """), {
+            "simulator_id": simulator_id,
+            "parameter_name": parameter_name,
+            "cp": cp,
+            "cpk": cpk,
+            "pp": pp,
+            "ppk": ppk,
+            "usl": usl,
+            "lsl": lsl,
+            "target": target,
+            "mean_value": mean_value,
+            "std_dev": std_dev,
+            "sample_size": sample_size
+        })
+        conn.commit()
 
 
 def get_capability_history(simulator_id: Optional[str] = None,
                            parameter_name: Optional[str] = None) -> pd.DataFrame:
     """Retrieve capability history data."""
-    conn = get_connection()
+    engine = get_engine()
 
     query = "SELECT * FROM capability_history WHERE 1=1"
-    params = []
+    params = {}
 
     if simulator_id:
-        query += " AND simulator_id = ?"
-        params.append(simulator_id)
+        query += " AND simulator_id = :simulator_id"
+        params["simulator_id"] = simulator_id
     if parameter_name:
-        query += " AND parameter_name = ?"
-        params.append(parameter_name)
+        query += " AND parameter_name = :parameter_name"
+        params["parameter_name"] = parameter_name
 
     query += " ORDER BY sample_date"
 
-    df = pd.read_sql_query(query, conn, params=params)
-    conn.close()
+    with engine.connect() as conn:
+        df = pd.read_sql_query(text(query), conn, params=params)
     return df
 
 
 def clear_spc_data(simulator_id: Optional[str] = None, parameter_name: Optional[str] = None):
     """Clear SPC data with optional filters."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
     query = "DELETE FROM spc_data WHERE 1=1"
-    params = []
+    params = {}
 
     if simulator_id:
-        query += " AND simulator_id = ?"
-        params.append(simulator_id)
+        query += " AND simulator_id = :simulator_id"
+        params["simulator_id"] = simulator_id
     if parameter_name:
-        query += " AND parameter_name = ?"
-        params.append(parameter_name)
+        query += " AND parameter_name = :parameter_name"
+        params["parameter_name"] = parameter_name
 
-    cursor.execute(query, params)
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text(query), params)
+        conn.commit()
 
 
 def clear_msa_data(simulator_id: Optional[str] = None, study_name: Optional[str] = None):
     """Clear MSA data with optional filters."""
-    conn = get_connection()
-    cursor = conn.cursor()
+    engine = get_engine()
 
     query = "DELETE FROM msa_studies WHERE 1=1"
-    params = []
+    params = {}
 
     if simulator_id:
-        query += " AND simulator_id = ?"
-        params.append(simulator_id)
+        query += " AND simulator_id = :simulator_id"
+        params["simulator_id"] = simulator_id
     if study_name:
-        query += " AND study_name = ?"
-        params.append(study_name)
+        query += " AND study_name = :study_name"
+        params["study_name"] = study_name
 
-    cursor.execute(query, params)
-    conn.commit()
-    conn.close()
+    with engine.connect() as conn:
+        conn.execute(text(query), params)
+        conn.commit()
 
 
 # Initialize database on import

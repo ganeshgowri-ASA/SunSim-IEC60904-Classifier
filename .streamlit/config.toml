@@ -1,0 +1,35 @@
+[server]
+# Enable headless mode for deployment
+headless = true
+
+# Bind to all interfaces for Railway/container deployment
+address = "0.0.0.0"
+
+# Port configuration (Railway sets PORT env variable)
+# Streamlit will read from PORT env variable automatically
+enableCORS = false
+enableXsrfProtection = true
+
+# File upload settings
+maxUploadSize = 200
+
+[browser]
+# Disable auto-opening browser (for server deployment)
+gatherUsageStats = false
+
+[theme]
+# Professional theme settings
+primaryColor = "#FF6B35"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F5F5"
+textColor = "#262626"
+font = "sans serif"
+
+[client]
+# Show error details for debugging
+showErrorDetails = true
+toolbarMode = "minimal"
+
+[runner]
+# Performance settings
+fastReruns = true

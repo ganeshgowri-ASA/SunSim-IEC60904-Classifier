@@ -1,6 +1,7 @@
 """
 Database utilities for SunSim-IEC60904-Classifier.
-Supports PostgreSQL (via DATABASE_URL) for production and SQLite for local development.
+Supports PostgreSQL (via DATABASE_URL or Streamlit secrets) for production
+and SQLite for local development.
 """
 
 import os
@@ -13,11 +14,23 @@ from sqlalchemy.pool import NullPool
 
 
 def get_database_url() -> str:
-    """Get database URL from environment or use SQLite fallback."""
-    database_url = os.environ.get('DATABASE_URL')
+    """Get database URL from Streamlit secrets, environment, or use SQLite fallback."""
+    database_url = None
+
+    # Priority 1: Check Streamlit secrets (for Streamlit Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'database' in st.secrets:
+            database_url = st.secrets["database"].get("DATABASE_URL")
+    except Exception:
+        pass
+
+    # Priority 2: Check environment variable (for Railway or local)
+    if not database_url:
+        database_url = os.environ.get('DATABASE_URL')
 
     if database_url:
-        # Railway uses postgres:// but SQLAlchemy needs postgresql://
+        # Railway/Heroku use postgres:// but SQLAlchemy needs postgresql://
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
         return database_url

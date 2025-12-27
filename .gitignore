@@ -209,3 +209,6 @@ __marimo__/
 # Local database
 data/
 *.db
+
+# Streamlit secrets (contains database credentials)
+.streamlit/secrets.toml

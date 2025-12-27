@@ -572,3 +572,454 @@ def save_uniformity_data(session: Session, measurement_id: int,
         data_objects.append(obj)
     session.flush()
     return data_objects
+
+
+# =============================================================================
+# USER ROLE ENUM
+# =============================================================================
+
+class UserRole(enum.Enum):
+    """User role levels for access control."""
+    ADMIN = 'admin'
+    OPERATOR = 'operator'
+    VIEWER = 'viewer'
+
+
+class ClassificationStandard(enum.Enum):
+    """IEC 60904-9 Edition versions."""
+    ED2 = 'Ed.2'
+    ED3 = 'Ed.3'
+
+
+# =============================================================================
+# USER MODEL
+# =============================================================================
+
+class User(Base):
+    """User accounts for the system."""
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(100), nullable=False, unique=True)
+    email = Column(String(255), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(255))
+    role = Column(String(20), default='viewer')  # admin, operator, viewer
+    department = Column(String(100))
+    phone = Column(String(50))
+
+    # Status
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)
+    last_login = Column(DateTime)
+    login_count = Column(Integer, default=0)
+
+    # Preferences
+    preferences = Column(JSON, default={})
+    notification_settings = Column(JSON, default={})
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    settings_changes = relationship("SettingsAuditLog", back_populates="user")
+
+    __table_args__ = (
+        Index('idx_user_username', 'username'),
+        Index('idx_user_email', 'email'),
+        Index('idx_user_role', 'role'),
+    )
+
+    def __repr__(self):
+        return f"<User(username='{self.username}', role='{self.role}')>"
+
+
+# =============================================================================
+# SYSTEM SETTINGS MODEL
+# =============================================================================
+
+class SystemSettings(Base):
+    """System-wide configuration settings."""
+    __tablename__ = 'system_settings'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    category = Column(String(50), nullable=False)  # classification, alarm, display, export
+    key = Column(String(100), nullable=False)
+    value = Column(Text)
+    value_type = Column(String(20), default='string')  # string, number, boolean, json
+    description = Column(Text)
+    is_editable = Column(Boolean, default=True)
+    requires_restart = Column(Boolean, default=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('category', 'key', name='uq_settings_category_key'),
+        Index('idx_settings_category', 'category'),
+    )
+
+    def __repr__(self):
+        return f"<SystemSettings(category='{self.category}', key='{self.key}')>"
+
+    def get_typed_value(self):
+        """Get value converted to appropriate type."""
+        if self.value is None:
+            return None
+        if self.value_type == 'number':
+            try:
+                return float(self.value)
+            except ValueError:
+                return 0.0
+        elif self.value_type == 'boolean':
+            return self.value.lower() in ('true', '1', 'yes')
+        elif self.value_type == 'json':
+            import json
+            try:
+                return json.loads(self.value)
+            except json.JSONDecodeError:
+                return {}
+        return self.value
+
+
+# =============================================================================
+# ALARM THRESHOLDS MODEL
+# =============================================================================
+
+class AlarmThreshold(Base):
+    """Configurable alarm thresholds for monitoring."""
+    __tablename__ = 'alarm_thresholds'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    parameter = Column(String(50), nullable=False)  # spectral, uniformity, sti, lti
+    threshold_type = Column(String(20), nullable=False)  # warning, critical, info
+
+    # Threshold values
+    min_value = Column(Float)
+    max_value = Column(Float)
+    target_value = Column(Float)
+
+    # Actions
+    enabled = Column(Boolean, default=True)
+    notify_email = Column(Boolean, default=False)
+    notify_sms = Column(Boolean, default=False)
+    auto_flag = Column(Boolean, default=True)
+
+    # Display
+    color = Column(String(20))  # Hex color for UI
+    icon = Column(String(50))
+    message_template = Column(Text)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_alarm_parameter', 'parameter'),
+        Index('idx_alarm_enabled', 'enabled'),
+    )
+
+    def __repr__(self):
+        return f"<AlarmThreshold(name='{self.name}', parameter='{self.parameter}')>"
+
+
+# =============================================================================
+# SETTINGS AUDIT LOG
+# =============================================================================
+
+class SettingsAuditLog(Base):
+    """Audit log for settings changes."""
+    __tablename__ = 'settings_audit_log'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    action = Column(String(50), nullable=False)  # create, update, delete
+    category = Column(String(50))
+    setting_key = Column(String(100))
+    old_value = Column(Text)
+    new_value = Column(Text)
+    ip_address = Column(String(45))
+    user_agent = Column(String(255))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="settings_changes")
+
+    __table_args__ = (
+        Index('idx_audit_user', 'user_id'),
+        Index('idx_audit_timestamp', 'timestamp'),
+        Index('idx_audit_category', 'category'),
+    )
+
+    def __repr__(self):
+        return f"<SettingsAuditLog(action='{self.action}', key='{self.setting_key}')>"
+
+
+# =============================================================================
+# DATA EXPORT/IMPORT HISTORY
+# =============================================================================
+
+class DataExportImport(Base):
+    """Track data export and import operations."""
+    __tablename__ = 'data_export_import'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    operation_type = Column(String(20), nullable=False)  # export, import
+    file_format = Column(String(20))  # csv, json, excel, pdf
+    file_name = Column(String(255))
+    file_size_bytes = Column(Integer)
+    record_count = Column(Integer)
+
+    # Status
+    status = Column(String(20), default='pending')  # pending, processing, completed, failed
+    error_message = Column(Text)
+
+    # Scope
+    data_type = Column(String(50))  # measurements, simulators, reports, all
+    date_range_start = Column(DateTime)
+    date_range_end = Column(DateTime)
+    filters_applied = Column(JSON)
+
+    # User info
+    user_id = Column(Integer, ForeignKey('users.id'))
+
+    # Timestamps
+    started_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime)
+
+    __table_args__ = (
+        Index('idx_export_type', 'operation_type'),
+        Index('idx_export_status', 'status'),
+        Index('idx_export_user', 'user_id'),
+    )
+
+    def __repr__(self):
+        return f"<DataExportImport(type='{self.operation_type}', status='{self.status}')>"
+
+
+# =============================================================================
+# SETTINGS DATA ACCESS FUNCTIONS
+# =============================================================================
+
+def get_all_users(session: Session, include_inactive: bool = False) -> List[User]:
+    """Get all users, optionally including inactive ones."""
+    query = session.query(User)
+    if not include_inactive:
+        query = query.filter(User.is_active == True)
+    return query.order_by(User.username).all()
+
+
+def get_user_by_username(session: Session, username: str) -> Optional[User]:
+    """Get a user by username."""
+    return session.query(User).filter(User.username == username).first()
+
+
+def get_user_by_email(session: Session, email: str) -> Optional[User]:
+    """Get a user by email."""
+    return session.query(User).filter(User.email == email).first()
+
+
+def create_user(session: Session, user_data: Dict[str, Any]) -> User:
+    """Create a new user."""
+    user = User(**user_data)
+    session.add(user)
+    session.flush()
+    return user
+
+
+def get_setting(session: Session, category: str, key: str) -> Optional[SystemSettings]:
+    """Get a specific setting."""
+    return (session.query(SystemSettings)
+            .filter(SystemSettings.category == category)
+            .filter(SystemSettings.key == key)
+            .first())
+
+
+def get_settings_by_category(session: Session, category: str) -> List[SystemSettings]:
+    """Get all settings in a category."""
+    return (session.query(SystemSettings)
+            .filter(SystemSettings.category == category)
+            .order_by(SystemSettings.key)
+            .all())
+
+
+def get_all_settings(session: Session) -> Dict[str, Dict[str, Any]]:
+    """Get all settings organized by category."""
+    settings = session.query(SystemSettings).all()
+    result = {}
+    for s in settings:
+        if s.category not in result:
+            result[s.category] = {}
+        result[s.category][s.key] = s.get_typed_value()
+    return result
+
+
+def save_setting(session: Session, category: str, key: str, value: Any,
+                 value_type: str = 'string', description: str = None) -> SystemSettings:
+    """Save or update a setting."""
+    setting = get_setting(session, category, key)
+
+    if setting:
+        setting.value = str(value) if value is not None else None
+        setting.updated_at = datetime.utcnow()
+    else:
+        setting = SystemSettings(
+            category=category,
+            key=key,
+            value=str(value) if value is not None else None,
+            value_type=value_type,
+            description=description
+        )
+        session.add(setting)
+
+    session.flush()
+    return setting
+
+
+def get_alarm_thresholds(session: Session, parameter: str = None,
+                         enabled_only: bool = True) -> List[AlarmThreshold]:
+    """Get alarm thresholds, optionally filtered by parameter."""
+    query = session.query(AlarmThreshold)
+
+    if parameter:
+        query = query.filter(AlarmThreshold.parameter == parameter)
+    if enabled_only:
+        query = query.filter(AlarmThreshold.enabled == True)
+
+    return query.order_by(AlarmThreshold.parameter, AlarmThreshold.threshold_type).all()
+
+
+def save_alarm_threshold(session: Session, threshold_data: Dict[str, Any]) -> AlarmThreshold:
+    """Save or update an alarm threshold."""
+    if 'id' in threshold_data and threshold_data['id']:
+        threshold = session.query(AlarmThreshold).filter(
+            AlarmThreshold.id == threshold_data['id']
+        ).first()
+        if threshold:
+            for key, value in threshold_data.items():
+                if key != 'id':
+                    setattr(threshold, key, value)
+            threshold.updated_at = datetime.utcnow()
+        else:
+            del threshold_data['id']
+            threshold = AlarmThreshold(**threshold_data)
+            session.add(threshold)
+    else:
+        if 'id' in threshold_data:
+            del threshold_data['id']
+        threshold = AlarmThreshold(**threshold_data)
+        session.add(threshold)
+
+    session.flush()
+    return threshold
+
+
+def log_settings_change(session: Session, user_id: int, action: str,
+                        category: str, key: str, old_value: str,
+                        new_value: str, ip_address: str = None) -> SettingsAuditLog:
+    """Log a settings change for audit."""
+    log = SettingsAuditLog(
+        user_id=user_id,
+        action=action,
+        category=category,
+        setting_key=key,
+        old_value=old_value,
+        new_value=new_value,
+        ip_address=ip_address
+    )
+    session.add(log)
+    session.flush()
+    return log
+
+
+def get_audit_log(session: Session, category: str = None,
+                  limit: int = 100) -> List[SettingsAuditLog]:
+    """Get audit log entries."""
+    query = session.query(SettingsAuditLog)
+
+    if category:
+        query = query.filter(SettingsAuditLog.category == category)
+
+    return query.order_by(SettingsAuditLog.timestamp.desc()).limit(limit).all()
+
+
+def initialize_default_settings(session: Session):
+    """Initialize default system settings."""
+    default_settings = [
+        # Classification settings
+        ('classification', 'standard_edition', 'Ed.3', 'string', 'IEC 60904-9 edition (Ed.2 or Ed.3)'),
+        ('classification', 'use_extended_spectrum', 'true', 'boolean', 'Use extended wavelength range (300-1200nm)'),
+        ('classification', 'auto_classify', 'true', 'boolean', 'Automatically classify after measurement'),
+
+        # Display settings
+        ('display', 'theme', 'dark', 'string', 'UI theme (dark or light)'),
+        ('display', 'chart_height', '400', 'number', 'Default chart height in pixels'),
+        ('display', 'decimal_places', '3', 'number', 'Decimal places for display'),
+        ('display', 'date_format', 'YYYY-MM-DD', 'string', 'Date display format'),
+
+        # Export settings
+        ('export', 'default_format', 'PDF', 'string', 'Default export format'),
+        ('export', 'include_charts', 'true', 'boolean', 'Include charts in exports'),
+        ('export', 'include_raw_data', 'false', 'boolean', 'Include raw data in exports'),
+        ('export', 'company_name', '', 'string', 'Company name for reports'),
+        ('export', 'lab_name', '', 'string', 'Laboratory name for reports'),
+
+        # Alarm settings
+        ('alarm', 'enable_alarms', 'true', 'boolean', 'Enable alarm system'),
+        ('alarm', 'email_notifications', 'false', 'boolean', 'Enable email notifications'),
+        ('alarm', 'notification_email', '', 'string', 'Email address for notifications'),
+
+        # System settings
+        ('system', 'session_timeout_minutes', '60', 'number', 'Session timeout in minutes'),
+        ('system', 'max_upload_size_mb', '50', 'number', 'Maximum file upload size in MB'),
+        ('system', 'enable_audit_log', 'true', 'boolean', 'Enable audit logging'),
+        ('system', 'data_retention_days', '365', 'number', 'Data retention period in days'),
+    ]
+
+    for category, key, value, value_type, description in default_settings:
+        existing = get_setting(session, category, key)
+        if not existing:
+            save_setting(session, category, key, value, value_type, description)
+
+    session.commit()
+
+
+def initialize_default_alarm_thresholds(session: Session):
+    """Initialize default alarm thresholds."""
+    default_thresholds = [
+        # Spectral alarms
+        {'name': 'Spectral Warning', 'parameter': 'spectral', 'threshold_type': 'warning',
+         'min_value': 0.75, 'max_value': 1.25, 'color': '#f59e0b', 'enabled': True},
+        {'name': 'Spectral Critical', 'parameter': 'spectral', 'threshold_type': 'critical',
+         'min_value': 0.6, 'max_value': 1.4, 'color': '#ef4444', 'enabled': True},
+
+        # Uniformity alarms
+        {'name': 'Uniformity Warning', 'parameter': 'uniformity', 'threshold_type': 'warning',
+         'max_value': 2.0, 'color': '#f59e0b', 'enabled': True},
+        {'name': 'Uniformity Critical', 'parameter': 'uniformity', 'threshold_type': 'critical',
+         'max_value': 5.0, 'color': '#ef4444', 'enabled': True},
+
+        # STI alarms
+        {'name': 'STI Warning', 'parameter': 'sti', 'threshold_type': 'warning',
+         'max_value': 2.0, 'color': '#f59e0b', 'enabled': True},
+        {'name': 'STI Critical', 'parameter': 'sti', 'threshold_type': 'critical',
+         'max_value': 5.0, 'color': '#ef4444', 'enabled': True},
+
+        # LTI alarms
+        {'name': 'LTI Warning', 'parameter': 'lti', 'threshold_type': 'warning',
+         'max_value': 2.0, 'color': '#f59e0b', 'enabled': True},
+        {'name': 'LTI Critical', 'parameter': 'lti', 'threshold_type': 'critical',
+         'max_value': 5.0, 'color': '#ef4444', 'enabled': True},
+    ]
+
+    for threshold_data in default_thresholds:
+        existing = (session.query(AlarmThreshold)
+                   .filter(AlarmThreshold.name == threshold_data['name'])
+                   .first())
+        if not existing:
+            save_alarm_threshold(session, threshold_data)
+
+    session.commit()

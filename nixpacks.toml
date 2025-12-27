@@ -1,8 +1,5 @@
-[phases.setup]
-nixPkgs = ["python311"]
-
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
+# Nixpacks configuration for Railway deployment
+# Let Nixpacks auto-detect Python and handle pip installation
 
 [start]
 cmd = "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0"

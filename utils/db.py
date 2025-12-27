@@ -359,6 +359,216 @@ class LampHistory(Base):
 
 
 # =============================================================================
+# SPC DATA MODELS (Phase 2)
+# =============================================================================
+
+class SPCStudy(Base):
+    """Statistical Process Control study data."""
+    __tablename__ = 'spc_studies'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    simulator_id = Column(Integer, ForeignKey('simulators.id'), nullable=False)
+    study_name = Column(String(255), nullable=False)
+    study_date = Column(DateTime, default=datetime.utcnow)
+    parameter_name = Column(String(100))  # e.g., 'irradiance', 'uniformity', 'spectral_match'
+    parameter_unit = Column(String(50))   # e.g., 'W/m²', '%'
+
+    # Specification limits
+    lsl = Column(Float)  # Lower Specification Limit
+    usl = Column(Float)  # Upper Specification Limit
+    target = Column(Float)  # Target value
+
+    # Control limits (calculated)
+    ucl = Column(Float)  # Upper Control Limit
+    lcl = Column(Float)  # Lower Control Limit
+    cl = Column(Float)   # Center Line
+
+    # Study statistics
+    mean = Column(Float)
+    std_dev = Column(Float)
+    range_avg = Column(Float)
+    subgroup_size = Column(Integer, default=5)
+    n_subgroups = Column(Integer)
+
+    # Capability indices
+    cp = Column(Float)
+    cpk = Column(Float)
+    pp = Column(Float)
+    ppk = Column(Float)
+    sigma_level = Column(Float)
+
+    # Study status
+    is_in_control = Column(Boolean, default=True)
+    n_violations = Column(Integer, default=0)
+    violation_details = Column(JSON)
+
+    notes = Column(Text)
+    created_by = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    simulator = relationship("Simulator")
+    data_points = relationship("SPCDataPoint", back_populates="study",
+                               cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_spc_study_simulator', 'simulator_id'),
+        Index('idx_spc_study_date', 'study_date'),
+    )
+
+    def __repr__(self):
+        return f"<SPCStudy(name='{self.study_name}', cpk={self.cpk})>"
+
+
+class SPCDataPoint(Base):
+    """Individual data points for SPC studies."""
+    __tablename__ = 'spc_data'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    study_id = Column(Integer, ForeignKey('spc_studies.id'), nullable=False)
+    subgroup_number = Column(Integer, nullable=False)
+    sample_number = Column(Integer, nullable=False)
+    value = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    # Subgroup statistics (calculated for first sample of each subgroup)
+    subgroup_mean = Column(Float)
+    subgroup_range = Column(Float)
+    subgroup_std = Column(Float)
+
+    # Flags
+    is_out_of_control = Column(Boolean, default=False)
+    violation_rule = Column(String(100))
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    study = relationship("SPCStudy", back_populates="data_points")
+
+    __table_args__ = (
+        Index('idx_spc_data_study', 'study_id'),
+        Index('idx_spc_data_subgroup', 'study_id', 'subgroup_number'),
+        UniqueConstraint('study_id', 'subgroup_number', 'sample_number',
+                         name='uq_spc_data_point'),
+    )
+
+    def __repr__(self):
+        return f"<SPCDataPoint(subgroup={self.subgroup_number}, value={self.value})>"
+
+
+# =============================================================================
+# MSA DATA MODELS (Phase 2)
+# =============================================================================
+
+class MSAStudy(Base):
+    """Measurement System Analysis / Gage R&R study."""
+    __tablename__ = 'msa_studies'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    simulator_id = Column(Integer, ForeignKey('simulators.id'), nullable=False)
+    study_name = Column(String(255), nullable=False)
+    study_date = Column(DateTime, default=datetime.utcnow)
+    study_type = Column(String(50), default='GRR')  # GRR, Linearity, Bias, etc.
+
+    # Study parameters
+    n_operators = Column(Integer, nullable=False)
+    n_parts = Column(Integer, nullable=False)
+    n_trials = Column(Integer, nullable=False)
+    tolerance = Column(Float)  # USL - LSL
+
+    # Gage information
+    gage_name = Column(String(255))
+    gage_id = Column(String(100))
+    gage_type = Column(String(100))
+    resolution = Column(Float)
+
+    # Variance components
+    var_total = Column(Float)
+    var_part_to_part = Column(Float)
+    var_total_grr = Column(Float)
+    var_repeatability = Column(Float)
+    var_reproducibility = Column(Float)
+    var_operator = Column(Float)
+    var_interaction = Column(Float)
+
+    # Standard deviations
+    sigma_total = Column(Float)
+    sigma_part = Column(Float)
+    sigma_grr = Column(Float)
+    sigma_repeatability = Column(Float)
+    sigma_reproducibility = Column(Float)
+
+    # Percentage contributions
+    pct_contribution_part = Column(Float)
+    pct_contribution_grr = Column(Float)
+    pct_contribution_repeatability = Column(Float)
+    pct_contribution_reproducibility = Column(Float)
+
+    # Study variation percentages
+    pct_study_var_grr = Column(Float)
+    pct_tolerance_grr = Column(Float)
+
+    # Key metrics
+    ndc = Column(Integer)  # Number of Distinct Categories
+    grr_percent = Column(Float)
+
+    # Rating
+    grr_rating = Column(String(50))  # Acceptable, Marginal, Unacceptable
+
+    # Metadata
+    operator_names = Column(JSON)  # List of operator names
+    part_names = Column(JSON)  # List of part names
+
+    notes = Column(Text)
+    created_by = Column(String(255))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    simulator = relationship("Simulator")
+    measurements = relationship("MSAMeasurement", back_populates="study",
+                                 cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index('idx_msa_study_simulator', 'simulator_id'),
+        Index('idx_msa_study_date', 'study_date'),
+    )
+
+    def __repr__(self):
+        return f"<MSAStudy(name='{self.study_name}', grr={self.grr_percent}%)>"
+
+
+class MSAMeasurement(Base):
+    """Individual measurements for MSA studies."""
+    __tablename__ = 'msa_measurements'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    study_id = Column(Integer, ForeignKey('msa_studies.id'), nullable=False)
+    operator_index = Column(Integer, nullable=False)
+    operator_name = Column(String(100))
+    part_index = Column(Integer, nullable=False)
+    part_name = Column(String(100))
+    trial_number = Column(Integer, nullable=False)
+    value = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    study = relationship("MSAStudy", back_populates="measurements")
+
+    __table_args__ = (
+        Index('idx_msa_measurement_study', 'study_id'),
+        UniqueConstraint('study_id', 'operator_index', 'part_index', 'trial_number',
+                         name='uq_msa_measurement'),
+    )
+
+    def __repr__(self):
+        return f"<MSAMeasurement(operator={self.operator_name}, part={self.part_name}, value={self.value})>"
+
+
+# =============================================================================
 # DATABASE MANAGER
 # =============================================================================
 

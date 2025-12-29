@@ -159,7 +159,7 @@ def calculate_spectral_classification(spectral_df: pd.DataFrame) -> dict:
 
     # Calculate total irradiance in 400-1100nm range
     mask_total = (wavelengths >= 400) & (wavelengths <= 1100)
-    total_irradiance = np.trapz(irradiance[mask_total], wavelengths[mask_total])
+    total_irradiance = np.trapezoid(irradiance[mask_total], wavelengths[mask_total])
 
     if total_irradiance <= 0:
         results['valid'] = False
@@ -183,7 +183,7 @@ def calculate_spectral_classification(spectral_df: pd.DataFrame) -> dict:
             continue
 
         # Calculate measured fraction
-        interval_irradiance = np.trapz(irradiance[mask], wavelengths[mask])
+        interval_irradiance = np.trapezoid(irradiance[mask], wavelengths[mask])
         measured_fraction = interval_irradiance / total_irradiance
 
         # Calculate SPD ratio

@@ -37,6 +37,7 @@ class GageRRResult:
     # Variance components
     repeatability_variance: float
     reproducibility_variance: float
+    grr_variance: float
     operator_variance: float
     operator_by_part_variance: float
     part_to_part_variance: float
@@ -227,6 +228,7 @@ def calculate_gage_rr_xbar_r(data: pd.DataFrame, tolerance: Optional[float] = No
     return GageRRResult(
         repeatability_variance=repeatability_variance,
         reproducibility_variance=reproducibility_variance,
+        grr_variance=grr_variance,
         operator_variance=reproducibility_variance,  # In X-bar R method, same as reproducibility
         operator_by_part_variance=0,  # Not calculated in X-bar R method
         part_to_part_variance=part_to_part_variance,
@@ -422,6 +424,7 @@ def calculate_gage_rr_anova(data: pd.DataFrame, tolerance: Optional[float] = Non
     result = GageRRResult(
         repeatability_variance=repeatability_variance,
         reproducibility_variance=reproducibility_variance + operator_by_part_variance,
+        grr_variance=grr_variance,
         operator_variance=operator_variance,
         operator_by_part_variance=operator_by_part_variance,
         part_to_part_variance=part_to_part_variance,

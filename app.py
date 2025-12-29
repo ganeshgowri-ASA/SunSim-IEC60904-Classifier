@@ -1,12 +1,11 @@
 """
 SunSim IEC 60904-9 Classification System
+=========================================
 
 Professional Sun Simulator Classification System
 IEC 60904-9 Ed.3 Compliant | ISO 17025 Report Generation
 
 Main Application Entry Point
-SunSim-IEC60904-Classifier
-Main application entry point for the Sun Simulator Classification System.
 """
 
 import streamlit as st
@@ -14,7 +13,7 @@ import streamlit as st
 # Page configuration
 st.set_page_config(
     page_title="SunSim IEC 60904-9 Classifier",
-    page_icon="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%E2%98%80%EF%B8%8F</text></svg>",
+    page_icon="☀️",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
@@ -23,9 +22,8 @@ st.set_page_config(
 )
 
 # Custom CSS for professional styling
-st.markdown("""
+CUSTOM_CSS = """
 <style>
-    /* Main styling */
     .main-header {
         font-size: 2.5rem;
         font-weight: 700;
@@ -42,7 +40,6 @@ st.markdown("""
         margin-bottom: 2rem;
     }
 
-    /* Card styling */
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 16px;
@@ -60,7 +57,6 @@ st.markdown("""
         margin-bottom: 1rem;
     }
 
-    /* Grade badge styling */
     .grade-badge {
         display: inline-flex;
         align-items: center;
@@ -96,7 +92,6 @@ st.markdown("""
         box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
     }
 
-    /* Navigation styling */
     .nav-link {
         display: flex;
         align-items: center;
@@ -118,7 +113,6 @@ st.markdown("""
         color: white;
     }
 
-    /* Footer */
     .footer {
         text-align: center;
         padding: 2rem;
@@ -128,11 +122,9 @@ st.markdown("""
         margin-top: 3rem;
     }
 
-    /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 
-    /* Sidebar styling */
     .css-1d391kg {
         padding-top: 1rem;
     }
@@ -145,7 +137,6 @@ st.markdown("""
         color: white;
     }
 
-    /* Standard reference box */
     .standard-ref {
         background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
         border-left: 4px solid #6366F1;
@@ -160,7 +151,6 @@ st.markdown("""
         margin-bottom: 0.5rem;
     }
 
-    /* Threshold table */
     .threshold-table {
         width: 100%;
         border-collapse: collapse;
@@ -177,196 +167,136 @@ st.markdown("""
         background: #F8FAFC;
         font-weight: 600;
         color: #1E3A5F;
-    page_title="SunSim IEC60904 Classifier",
-    page_icon="☀️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS for dark theme
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 2.5rem;   
-        font-weight: bold;
-        background: linear-gradient(90deg, #00D4AA, #4ECDC4);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-align: center;
-        margin-bottom: 30px;
-    }
-    .feature-card {
-        background: linear-gradient(135deg, #1A1D24 0%, #0E1117 100%);
-        padding: 25px;
-        border-radius: 15px;
-        border: 1px solid #2D3139;
-        margin: 10px 0;
-        transition: transform 0.3s ease;
-    }
-    .feature-card:hover {
-        transform: translateY(-5px);
-        border-color: #00D4AA;
-    }
-    .feature-icon {
-        font-size: 36px;
-        margin-bottom: 10px;
-    }
-    .feature-title {
-        font-size: 20px;
-        font-weight: bold;
-        color: #FAFAFA;
-        margin-bottom: 10px;
-    }
-    .feature-desc {
-        color: #888;
-        font-size: 14px;
-    }
-    .stats-container {
-        display: flex;
-        justify-content: space-around;
-        margin: 30px 0;
-    }
-    .stat-box {
-        text-align: center;
-        padding: 20px;
-    }
-    .stat-value {
-        font-size: 36px;
-        font-weight: bold;
-        color: #00D4AA;
-    }
-    .stat-label {
-        color: #888;
-        font-size: 14px;
     }
 </style>
-""", unsafe_allow_html=True)
+"""
 
-# Main header
-st.markdown('<h1 class="main-header">☀️ SunSim IEC60904 Classifier</h1>', unsafe_allow_html=True)
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-st.markdown("""
-<p style="text-align: center; color: #888; font-size: 18px; margin-bottom: 40px;">
-    Comprehensive Quality Control System for Solar Simulator Classification per IEC 60904-9
-</p>
-""", unsafe_allow_html=True)
 
-# Quick stats
-st.markdown("---")
+def main():
+    """Main application page - Welcome and Navigation"""
 
-col1, col2, col3, col4 = st.columns(4)
+    # Header
+    st.markdown(
+        '<h1 class="main-header">SunSim IEC 60904-9 Classifier</h1>',
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        '<p class="sub-header">Professional Sun Simulator Classification System | '
+        'IEC 60904-9 Ed.3 Compliant</p>',
+        unsafe_allow_html=True
+    )
 
-with col1:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-value">IEC 60904</div>
-        <div class="stat-label">Standard Compliance</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Standard reference
+    st.markdown(
+        '<div class="standard-ref">'
+        '<div class="standard-ref-title">IEC 60904-9:2020 (Edition 3)</div>'
+        '<div>Photovoltaic devices - Part 9: Classification of solar simulator characteristics</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
 
-with col2:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-value">ISO 22514</div>
-        <div class="stat-label">SPC Methods</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.divider()
 
-with col3:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-value">AIAG MSA</div>
-        <div class="stat-label">Gage R&R Standard</div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Overview columns
+    col1, col2, col3 = st.columns(3)
 
-with col4:
-    st.markdown("""
-    <div class="stat-box">
-        <div class="stat-value">6σ</div>
-        <div class="stat-label">Capability Target</div>
-    </div>
-    """, unsafe_allow_html=True)
+    with col1:
+        st.markdown("""
+### Spectral Match (SPD)
+Measures how closely the simulator's spectral distribution matches
+the AM1.5G reference spectrum across wavelength intervals.
 
-st.markdown("---")
+**Wavelength Range:** 300-1200nm (Ed.3)
 
-# Feature cards
-st.subheader("Quality Control Modules")
-
-feat_col1, feat_col2, feat_col3 = st.columns(3)
-
-with feat_col1:
-    st.markdown("""
-    <div class="feature-card">
-        <div class="feature-icon">📈</div>
-        <div class="feature-title">SPC Analysis</div>
-        <div class="feature-desc">
-            Statistical Process Control with X-bar & R charts, run rules detection,
-            and real-time process monitoring. ISO 22514 compliant control limits.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with feat_col2:
-    st.markdown("""
-    <div class="feature-card">
-        <div class="feature-icon">🔬</div>
-        <div class="feature-title">Gage R&R</div>
-        <div class="feature-desc">
-            Measurement System Analysis per AIAG MSA manual. Evaluate repeatability,
-            reproducibility, and calculate number of distinct categories (ndc).
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with feat_col3:
-    st.markdown("""
-    <div class="feature-card">
-        <div class="feature-icon">🎯</div>
-        <div class="feature-title">Capability Index</div>
-        <div class="feature-desc">
-            Process capability analysis with Cp, Cpk, Pp, Ppk gauges.
-            Sigma level calculation and PPM defect rate estimation.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# Navigation help
-st.subheader("🚀 Getting Started")
-
-st.markdown("""
-Use the **sidebar navigation** to access the Quality Control modules:
-
-1. **📈 SPC Analysis** - Monitor process stability with control charts
-2. **🔬 MSA Gage R&R** - Validate your measurement system
-3. **🎯 Capability Index** - Assess process capability vs specifications
-
-Each module supports:
-- Sample data generation for testing
-- Database storage for historical analysis
-- CSV import for your own data
-- Interactive Plotly visualizations
+| Grade | Ratio Range |
+|-------|-------------|
+| A+ | 0.875 - 1.125 |
+| A | 0.75 - 1.25 |
+| B | 0.6 - 1.4 |
+| C | 0.4 - 2.0 |
 """)
 
-# Sidebar info
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### About")
-    st.markdown("""
-    **SunSim-IEC60904-Classifier**
+    with col2:
+        st.markdown("""
+### Non-Uniformity
+Measures spatial uniformity of irradiance across the test plane.
 
-    Quality control system for solar simulator
-    classification per IEC 60904-9 standard.
+**Formula:** ((Max - Min) / (Max + Min)) x 100%
 
-    *Phase 2: Quality Control Modules*
-    """)
+| Grade | Max Non-Uniformity |
+|-------|-------------------|
+| A+ | <= 1% |
+| A | <= 2% |
+| B | <= 5% |
+| C | <= 10% |
+""")
 
-    st.markdown("---")
-    st.markdown("### Standards")
-    st.markdown("""
-    - IEC 60904-9 Ed.3
-    - ISO 22514
-    - AIAG MSA 4th Ed.
-    """)
+    with col3:
+        st.markdown("""
+### Temporal Stability
+Measures irradiance stability over time (STI & LTI).
+
+**STI:** Short-term instability
+**LTI:** Long-term instability
+
+| Grade | STI | LTI |
+|-------|-----|-----|
+| A+ | <= 0.5% | <= 1% |
+| A | <= 2% | <= 2% |
+| B | <= 5% | <= 5% |
+| C | <= 10% | <= 10% |
+""")
+
+    st.divider()
+
+    # Navigation cards
+    st.markdown("### Quick Navigation")
+
+    nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
+
+    with nav_col1:
+        st.page_link(
+            "pages/1_Classification_Dashboard.py",
+            label="Classification Dashboard",
+            icon="📊",
+            use_container_width=True
+        )
+
+    with nav_col2:
+        st.page_link(
+            "pages/2_Spectral_Match.py",
+            label="Spectral Match Analysis",
+            icon="📈",
+            use_container_width=True
+        )
+
+    with nav_col3:
+        st.page_link(
+            "pages/3_Uniformity.py",
+            label="Uniformity Analysis",
+            icon="🔲",
+            use_container_width=True
+        )
+
+    with nav_col4:
+        st.page_link(
+            "pages/4_Temporal_Stability.py",
+            label="Temporal Stability",
+            icon="⏱️",
+            use_container_width=True
+        )
+
+    # Footer
+    st.markdown(
+        '<div class="footer">'
+        '<p>IEC 60904-9 Ed.3 Solar Simulator Classification System</p>'
+        '<p>Compliant with ISO 17025 Laboratory Accreditation Requirements</p>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+
+if __name__ == "__main__":
+    main()

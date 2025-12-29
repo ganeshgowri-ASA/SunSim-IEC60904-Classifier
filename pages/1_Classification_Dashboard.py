@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import sys
 from pathlib import Path
+from io import BytesIO
 
 # Add parent directory for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -860,6 +861,368 @@ def create_classification_summary_chart(spectral_grade, uniformity_grade, tempor
     return fig
 
 
+# =============================================================================
+# ISO 17025 PDF REPORT GENERATION
+# =============================================================================
+
+def generate_iso17025_pdf_report(data: dict) -> bytes:
+    """
+    Generate ISO 17025 compliant PDF classification report.
+
+    Args:
+        data: Complete classification data from generate_comprehensive_sample_data()
+
+    Returns:
+        PDF file as bytes, or None if reportlab is not available
+    """
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import mm
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    except ImportError:
+        return None
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm)
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=18,
+        spaceAfter=12,
+        alignment=TA_CENTER
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=8,
+        spaceBefore=12
+    )
+    subheading_style = ParagraphStyle(
+        'CustomSubHeading',
+        parent=styles['Heading3'],
+        fontSize=12,
+        spaceAfter=6,
+        spaceBefore=8
+    )
+    normal_style = styles['Normal']
+
+    elements = []
+
+    # Overall classification grade
+    overall_grade = (
+        f"{data['spectral']['grade'].value}"
+        f"{data['uniformity']['grade'].value}"
+        f"{data['temporal']['overall_grade'].value}"
+    )
+
+    # Title
+    elements.append(Paragraph("IEC 60904-9 Solar Simulator Classification Report", title_style))
+    elements.append(Paragraph("ISO 17025 Compliant Test Report", ParagraphStyle(
+        'Subtitle', parent=styles['Normal'], fontSize=12, alignment=TA_CENTER, spaceAfter=20
+    )))
+    elements.append(Spacer(1, 12))
+
+    # Report Information Table
+    equip = data['equipment']
+    test = data['test_info']
+
+    info_data = [
+        ['Report Date:', test['test_date'].strftime('%Y-%m-%d %H:%M:%S')],
+        ['Simulator ID:', equip['serial']],
+        ['Simulator Model:', f"{equip['manufacturer']} {equip['model']}"],
+        ['Test Location:', test['laboratory']],
+        ['Operator:', test['operator']],
+        ['Certificate Number:', test['certificate']],
+        ['Overall Classification:', overall_grade],
+    ]
+
+    info_table = Table(info_data, colWidths=[140, 330])
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E8F5E9')),
+        ('FONTNAME', (1, -1), (1, -1), 'Helvetica-Bold'),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+
+    # Classification Summary Section
+    elements.append(Paragraph("Classification Summary", heading_style))
+
+    summary_data = [
+        ['Parameter', 'Measured Value', 'Grade', 'IEC 60904-9 Criteria'],
+        [
+            'Spectral Match',
+            f"Ratio: {data['spectral']['min_ratio']:.3f} - {data['spectral']['max_ratio']:.3f}",
+            data['spectral']['grade'].value,
+            'A+: 0.875-1.125 | A: 0.75-1.25'
+        ],
+        [
+            'Non-Uniformity',
+            f"{data['uniformity']['non_uniformity']:.2f}%",
+            data['uniformity']['grade'].value,
+            'A+: ≤1% | A: ≤2% | B: ≤5%'
+        ],
+        [
+            'Temporal Stability (STI)',
+            f"{data['temporal']['sti_value']:.3f}%",
+            data['temporal']['sti_grade'].value,
+            'A+: ≤0.5% | A: ≤2% | B: ≤5%'
+        ],
+        [
+            'Temporal Stability (LTI)',
+            f"{data['temporal']['lti_value']:.3f}%",
+            data['temporal']['lti_grade'].value,
+            'A+: ≤1% | A: ≤2% | B: ≤5%'
+        ],
+    ]
+
+    summary_table = Table(summary_data, colWidths=[120, 120, 60, 170])
+    summary_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (3, 0), (3, -1), 'LEFT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8FAFC')]),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+
+    # Spectral Match Analysis Section
+    elements.append(Paragraph("Spectral Match Analysis (IEC 60904-9 Ed.3)", heading_style))
+
+    spectral_data_rows = [['Wavelength Band', 'Reference (%)', 'Measured (%)', 'Ratio', 'Status']]
+    for band_data in data['spectral']['data']:
+        status = 'PASS' if band_data['in_spec'] else 'FAIL'
+        spectral_data_rows.append([
+            band_data['band'],
+            f"{band_data['reference']:.1f}%",
+            f"{band_data['measured']:.1f}%",
+            f"{band_data['ratio']:.3f}",
+            status
+        ])
+
+    spectral_table = Table(spectral_data_rows, colWidths=[100, 80, 80, 70, 70])
+    spectral_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(spectral_table)
+    elements.append(Spacer(1, 15))
+
+    # SPD Metrics
+    spd = data['spectral']['spd_metrics']
+    elements.append(Paragraph("SPD Integrated Metrics", subheading_style))
+    spd_data = [
+        ['Metric', 'Value'],
+        ['Spectral Mismatch Factor (M)', f"{spd['spectral_mismatch_factor']:.4f}"],
+        ['Mean Ratio', f"{spd['mean_ratio']:.4f}"],
+        ['Standard Deviation', f"{spd['std_ratio']:.4f}"],
+        ['Weighted Deviation', f"{spd['weighted_deviation_percent']:.2f}%"],
+    ]
+    spd_table = Table(spd_data, colWidths=[180, 120])
+    spd_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#6366F1')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(spd_table)
+    elements.append(Spacer(1, 15))
+
+    # Uniformity Section
+    elements.append(Paragraph("Non-Uniformity Analysis", heading_style))
+    unif = data['uniformity']
+    unif_data = [
+        ['Parameter', 'Value'],
+        ['Grid Size', f"{unif['grid_size']} x {unif['grid_size']} points"],
+        ['Test Plane Size', f"{unif['plane_size']} mm x {unif['plane_size']} mm"],
+        ['Min Irradiance', f"{unif['min']:.1f} W/m²"],
+        ['Max Irradiance', f"{unif['max']:.1f} W/m²"],
+        ['Mean Irradiance', f"{unif['mean']:.1f} W/m²"],
+        ['Non-Uniformity', f"{unif['non_uniformity']:.2f}%"],
+        ['Reference Cell Position', f"({unif['ref_cell_pos'][0]}, {unif['ref_cell_pos'][1]})"],
+        ['Correction Factor', f"{unif['correction_factor']:.4f}"],
+    ]
+    unif_table = Table(unif_data, colWidths=[180, 150])
+    unif_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(unif_table)
+    elements.append(Spacer(1, 15))
+
+    # Temporal Stability Section
+    elements.append(Paragraph("Temporal Stability Analysis", heading_style))
+    temp = data['temporal']
+    temp_data = [
+        ['Parameter', 'Value', 'Grade'],
+        ['Short-Term Instability (STI)', f"{temp['sti_value']:.3f}%", temp['sti_grade'].value],
+        ['Long-Term Instability (LTI)', f"{temp['lti_value']:.3f}%", temp['lti_grade'].value],
+    ]
+    temp_table = Table(temp_data, colWidths=[180, 100, 60])
+    temp_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(temp_table)
+    elements.append(Spacer(1, 15))
+
+    # SPC Analysis Section
+    elements.append(Paragraph("Statistical Process Control (SPC) Analysis", heading_style))
+    spc_u = data['spc']['uniformity']
+    spc_t = data['spc']['temporal']
+    spc_data = [
+        ['SPC Metric', 'Uniformity', 'Temporal'],
+        ['Mean', f"{spc_u['mean']:.2f} W/m²", f"{spc_t['mean']:.2f} W/m²"],
+        ['Standard Deviation', f"{spc_u['std']:.4f}", f"{spc_t['std']:.4f}"],
+        ['UCL (3-sigma)', f"{spc_u['ucl']:.2f}", f"{spc_t['ucl']:.2f}"],
+        ['LCL (3-sigma)', f"{spc_u['lcl']:.2f}", f"{spc_t['lcl']:.2f}"],
+        ['Cp Index', f"{spc_u['cp']:.3f}", 'N/A'],
+        ['Cpk Index', f"{spc_u['cpk']:.3f}", 'N/A'],
+        ['Out-of-Control Points', f"{spc_u['ooc_count']} ({spc_u['ooc_percent']:.1f}%)",
+         f"{spc_t['ooc_count']} ({spc_t['ooc_percent']:.1f}%)"],
+    ]
+    spc_table = Table(spc_data, colWidths=[150, 110, 110])
+    spc_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F59E0B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(spc_table)
+    elements.append(Spacer(1, 15))
+
+    # Equipment Information
+    elements.append(Paragraph("Equipment Information", heading_style))
+    equip_data = [
+        ['Parameter', 'Value'],
+        ['Manufacturer', equip['manufacturer']],
+        ['Model', equip['model']],
+        ['Serial Number', equip['serial']],
+        ['Lamp Type', equip['lamp_type']],
+        ['Lamp Hours', f"{equip['lamp_hours']:.1f} hrs"],
+        ['Last Calibration', equip['calibration_date'].strftime('%Y-%m-%d')],
+        ['Next Calibration Due', equip['next_calibration'].strftime('%Y-%m-%d')],
+    ]
+    equip_table = Table(equip_data, colWidths=[150, 200])
+    equip_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(equip_table)
+    elements.append(Spacer(1, 15))
+
+    # Test Conditions
+    elements.append(Paragraph("Test Conditions", heading_style))
+    cond_data = [
+        ['Parameter', 'Value'],
+        ['Ambient Temperature', f"{test['ambient_temp']:.1f} °C"],
+        ['Relative Humidity', f"{test['humidity']:.1f}%"],
+    ]
+    cond_table = Table(cond_data, colWidths=[150, 100])
+    cond_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A5F')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(cond_table)
+    elements.append(Spacer(1, 20))
+
+    # ISO 17025 Compliance Section
+    elements.append(Paragraph("ISO 17025 Compliance Information", heading_style))
+
+    compliance_text = """
+    This classification report was prepared in accordance with IEC 60904-9:2020 (Edition 3)
+    standard requirements and ISO 17025 quality management system guidelines.
+
+    The measurement uncertainty and traceability of calibration equipment are documented
+    in the laboratory's quality management system records.
+    """
+    elements.append(Paragraph(compliance_text, normal_style))
+    elements.append(Spacer(1, 10))
+
+    # Signature fields
+    sig_data = [
+        ['Measurement Equipment Calibration Status:', '________________________'],
+        ['Calibration Certificate Number:', '________________________'],
+        ['Measurement Uncertainty (k=2):', '________________________'],
+        ['', ''],
+        ['Reviewed By:', '________________________  Date: ____________'],
+        ['Approved By:', '________________________  Date: ____________'],
+    ]
+    sig_table = Table(sig_data, colWidths=[200, 270])
+    sig_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(sig_table)
+
+    # Footer note
+    elements.append(Spacer(1, 20))
+    footer_style = ParagraphStyle(
+        'Footer', parent=styles['Normal'], fontSize=8, alignment=TA_CENTER, textColor=colors.grey
+    )
+    elements.append(Paragraph(
+        f"Report generated by SunSim IEC 60904-9 Classification System | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        footer_style
+    ))
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def main():
     """Main dashboard page with comprehensive visualizations"""
 
@@ -1256,8 +1619,23 @@ def main():
     st.divider()
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("Generate ISO 17025 Report", type="primary", use_container_width=True):
-            st.info("Report generation feature - Coming soon!")
+        # Generate report filename
+        report_filename = f"IEC60904_Classification_{data['equipment']['serial']}_{datetime.now().strftime('%Y%m%d')}.pdf"
+
+        # Generate PDF report
+        pdf_bytes = generate_iso17025_pdf_report(data)
+
+        if pdf_bytes:
+            st.download_button(
+                label="Download ISO 17025 Report (PDF)",
+                data=pdf_bytes,
+                file_name=report_filename,
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+        else:
+            st.error("ReportLab library is required for PDF generation. Install with: pip install reportlab")
 
 
 if __name__ == "__main__":

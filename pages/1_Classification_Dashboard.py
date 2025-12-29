@@ -4,6 +4,8 @@ IEC 60904-9 Ed.3 Classification Dashboard
 
 Comprehensive solar simulator classification dashboard with:
 - Spectral Match analysis with 6 wavelength bands (AM1.5G reference)
+- SPD (Spectral Power Distribution) integrated calculations
+- SPC (Statistical Process Control) analysis
 - Non-Uniformity heatmap with reference cell position marking
 - Temporal Stability (STI/LTI) time-series analysis
 - Overall classification summary visualization
@@ -161,6 +163,14 @@ st.markdown("""
         margin: 1rem 0;
     }
 
+    .spc-card {
+        background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+        border-left: 4px solid #F59E0B;
+        border-radius: 0 8px 8px 0;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+    }
+
     .ref-cell-marker {
         background: #EF4444;
         color: white;
@@ -171,6 +181,105 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+def calculate_spd_metrics(spectral_data: list) -> dict:
+    """
+    Calculate SPD (Spectral Power Distribution) metrics per IEC 60904-9
+
+    Uses trapezoidal integration for spectral irradiance calculations.
+    Note: numpy.trapezoid is used (numpy 2.0+ compatible, replaces deprecated trapz)
+    """
+    # Extract wavelength midpoints and measured fractions
+    wavelengths = [(d["start"] + d["end"]) / 2 for d in spectral_data]
+    measured_fractions = [d["measured"] for d in spectral_data]
+    reference_fractions = [d["reference"] for d in spectral_data]
+
+    # Calculate integrated spectral irradiance using trapezoidal rule
+    # Use numpy.trapezoid (numpy 2.0+) with fallback to trapz for older versions
+    try:
+        total_measured = np.trapezoid(measured_fractions, wavelengths)
+        total_reference = np.trapezoid(reference_fractions, wavelengths)
+    except AttributeError:
+        # Fallback for numpy < 2.0
+        total_measured = np.trapz(measured_fractions, wavelengths)
+        total_reference = np.trapz(reference_fractions, wavelengths)
+
+    # Calculate spectral mismatch factor (M)
+    spectral_mismatch = total_measured / total_reference if total_reference > 0 else 1.0
+
+    # Calculate weighted spectral deviation
+    ratios = [d["ratio"] for d in spectral_data]
+    weighted_deviation = np.sqrt(np.mean([(r - 1)**2 for r in ratios])) * 100
+
+    return {
+        "total_measured_irradiance": total_measured,
+        "total_reference_irradiance": total_reference,
+        "spectral_mismatch_factor": spectral_mismatch,
+        "weighted_deviation_percent": weighted_deviation,
+        "mean_ratio": np.mean(ratios),
+        "std_ratio": np.std(ratios),
+    }
+
+
+def calculate_spc_metrics(uniformity_grid: np.ndarray, temporal_data: dict) -> dict:
+    """
+    Calculate SPC (Statistical Process Control) metrics
+
+    Includes control limits, capability indices, and process stability indicators.
+    """
+    # Uniformity SPC
+    flat_grid = uniformity_grid.flatten()
+    u_mean = np.mean(flat_grid)
+    u_std = np.std(flat_grid)
+    u_range = np.max(flat_grid) - np.min(flat_grid)
+
+    # Control limits (3-sigma)
+    ucl = u_mean + 3 * u_std  # Upper Control Limit
+    lcl = u_mean - 3 * u_std  # Lower Control Limit
+
+    # Process Capability Index (Cp) - assumes spec limits of +/- 2%
+    spec_limit = u_mean * 0.02  # 2% of mean
+    usl = u_mean + spec_limit  # Upper Spec Limit
+    lsl = u_mean - spec_limit  # Lower Spec Limit
+
+    cp = (usl - lsl) / (6 * u_std) if u_std > 0 else float('inf')
+    cpk = min((usl - u_mean), (u_mean - lsl)) / (3 * u_std) if u_std > 0 else float('inf')
+
+    # Temporal SPC
+    sti_data = temporal_data.get("sti_data", np.array([1000]))
+    t_mean = np.mean(sti_data)
+    t_std = np.std(sti_data)
+    t_ucl = t_mean + 3 * t_std
+    t_lcl = t_mean - 3 * t_std
+
+    # Count out-of-control points
+    ooc_uniformity = np.sum((flat_grid > ucl) | (flat_grid < lcl))
+    ooc_temporal = np.sum((sti_data > t_ucl) | (sti_data < t_lcl))
+
+    return {
+        "uniformity": {
+            "mean": u_mean,
+            "std": u_std,
+            "range": u_range,
+            "ucl": ucl,
+            "lcl": lcl,
+            "usl": usl,
+            "lsl": lsl,
+            "cp": cp,
+            "cpk": cpk,
+            "ooc_count": ooc_uniformity,
+            "ooc_percent": (ooc_uniformity / len(flat_grid)) * 100,
+        },
+        "temporal": {
+            "mean": t_mean,
+            "std": t_std,
+            "ucl": t_ucl,
+            "lcl": t_lcl,
+            "ooc_count": ooc_temporal,
+            "ooc_percent": (ooc_temporal / len(sti_data)) * 100,
+        }
+    }
 
 
 def generate_comprehensive_sample_data():
@@ -195,6 +304,9 @@ def generate_comprehensive_sample_data():
             "ratio": ratio,
             "in_spec": 0.875 <= ratio <= 1.125
         })
+
+    # Calculate SPD metrics
+    spd_metrics = calculate_spd_metrics(spectral_data)
 
     # Uniformity Grid Data - 11x11 grid with reference cell position
     grid_size = 11
@@ -238,12 +350,28 @@ def generate_comprehensive_sample_data():
     lti_drift = 3 * np.sin(2 * np.pi * lti_t / 300) + np.random.normal(0, 1.5, lti_samples)
     lti_data = target_irradiance + lti_drift
 
+    temporal_data = {
+        "sti_time": t,
+        "sti_data": sti_data,
+        "sti_value": (np.max(sti_data) - np.min(sti_data)) / (np.max(sti_data) + np.min(sti_data)) * 100,
+        "lti_time": lti_t,
+        "lti_data": lti_data,
+        "lti_value": (np.max(lti_data) - np.min(lti_data)) / (np.max(lti_data) + np.min(lti_data)) * 100,
+        "sti_grade": ClassificationGrade.A,
+        "lti_grade": ClassificationGrade.A,
+        "overall_grade": ClassificationGrade.A,
+    }
+
+    # Calculate SPC metrics
+    spc_metrics = calculate_spc_metrics(uniformity_grid, temporal_data)
+
     return {
         "spectral": {
             "data": spectral_data,
             "min_ratio": min(d["ratio"] for d in spectral_data),
             "max_ratio": max(d["ratio"] for d in spectral_data),
             "grade": ClassificationGrade.A_PLUS,
+            "spd_metrics": spd_metrics,
         },
         "uniformity": {
             "grid": uniformity_grid,
@@ -260,17 +388,8 @@ def generate_comprehensive_sample_data():
             "correction_factor": correction_factor,
             "grade": ClassificationGrade.A_PLUS,
         },
-        "temporal": {
-            "sti_time": t,
-            "sti_data": sti_data,
-            "sti_value": (np.max(sti_data) - np.min(sti_data)) / (np.max(sti_data) + np.min(sti_data)) * 100,
-            "lti_time": lti_t,
-            "lti_data": lti_data,
-            "lti_value": (np.max(lti_data) - np.min(lti_data)) / (np.max(lti_data) + np.min(lti_data)) * 100,
-            "sti_grade": ClassificationGrade.A,
-            "lti_grade": ClassificationGrade.A,
-            "overall_grade": ClassificationGrade.A,
-        },
+        "temporal": temporal_data,
+        "spc": spc_metrics,
         "equipment": {
             "manufacturer": "SunSim Technologies",
             "model": "SS-3000 Pro",
@@ -316,7 +435,8 @@ def create_spectral_comparison_chart(spectral_data: list) -> go.Figure:
         x=bands,
         y=reference,
         marker_color='rgba(99, 102, 241, 0.7)',
-        marker_line=dict(color='#4F46E5', width=2),
+        marker_line_color='#4F46E5',
+        marker_line_width=2,
         hovertemplate='<b>%{x}</b><br>Reference: %{y:.2f}%<extra></extra>'
     ))
 
@@ -326,38 +446,30 @@ def create_spectral_comparison_chart(spectral_data: list) -> go.Figure:
         x=bands,
         y=measured,
         marker_color=colors,
-        marker_line=dict(color='#1E3A5F', width=2),
+        marker_line_color='#1E3A5F',
+        marker_line_width=2,
         hovertemplate='<b>%{x}</b><br>Measured: %{y:.2f}%<extra></extra>'
     ))
 
-    # Add threshold lines
-    fig.add_hline(y=0, line_dash="solid", line_color="#94A3B8", line_width=1)
-
     fig.update_layout(
-        title=dict(
-            text="Spectral Distribution: Measured vs AM1.5G Reference",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(
-            title="Wavelength Band",
-            gridcolor="#E2E8F0",
-        ),
-        yaxis=dict(
-            title="Spectral Fraction (%)",
-            gridcolor="#E2E8F0",
-        ),
+        title={
+            'text': "Spectral Distribution: Measured vs AM1.5G Reference",
+            'font': {'size': 16, 'color': "#1E3A5F"}
+        },
+        xaxis={'title': "Wavelength Band", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': "Spectral Fraction (%)", 'gridcolor': "#E2E8F0"},
         barmode='group',
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=400,
-        margin=dict(l=60, r=40, t=60, b=60),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5
-        ),
+        margin={'l': 60, 'r': 40, 't': 60, 'b': 60},
+        legend={
+            'orientation': "h",
+            'yanchor': "bottom",
+            'y': 1.02,
+            'xanchor': "center",
+            'x': 0.5
+        },
         hovermode="x unified"
     )
 
@@ -370,7 +482,6 @@ def create_spectral_ratio_chart(spectral_data: list) -> go.Figure:
 
     bands = [d["band"] for d in spectral_data]
     ratios = [d["ratio"] for d in spectral_data]
-    colors = [d["color"] for d in spectral_data]
 
     # Threshold bands
     fig.add_hrect(y0=0.4, y1=2.0, fillcolor="rgba(239, 68, 68, 0.1)", line_width=0)
@@ -394,22 +505,19 @@ def create_spectral_ratio_chart(spectral_data: list) -> go.Figure:
         y=ratios,
         mode='markers+lines',
         name='Spectral Match Ratio',
-        marker=dict(size=14, color=marker_colors, line=dict(width=2, color='white')),
-        line=dict(color='#1E3A5F', width=2),
+        marker={'size': 14, 'color': marker_colors, 'line': {'width': 2, 'color': 'white'}},
+        line={'color': '#1E3A5F', 'width': 2},
         hovertemplate='<b>%{x}</b><br>Ratio: %{y:.3f}<extra></extra>'
     ))
 
     fig.update_layout(
-        title=dict(
-            text="Spectral Match Ratio per Wavelength Band",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(title="Wavelength Band", gridcolor="#E2E8F0"),
-        yaxis=dict(title="Ratio (Measured/Reference)", gridcolor="#E2E8F0", range=[0.6, 1.5]),
+        title={'text': "Spectral Match Ratio per Wavelength Band", 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "Wavelength Band", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': "Ratio (Measured/Reference)", 'gridcolor': "#E2E8F0", 'range': [0.6, 1.5]},
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=350,
-        margin=dict(l=60, r=80, t=60, b=60),
+        margin={'l': 60, 'r': 80, 't': 60, 'b': 60},
         showlegend=False,
     )
 
@@ -429,7 +537,7 @@ def create_uniformity_heatmap(data: dict) -> go.Figure:
 
     fig = go.Figure()
 
-    # Heatmap
+    # Heatmap - using modern colorbar syntax
     fig.add_trace(go.Heatmap(
         z=grid,
         x=x,
@@ -438,10 +546,10 @@ def create_uniformity_heatmap(data: dict) -> go.Figure:
         reversescale=False,
         zmin=data["min"] - 2,
         zmax=data["max"] + 2,
-        colorbar=dict(
-            title=dict(text='W/m²', side='right'),
-            tickformat='.1f'
-        ),
+        colorbar={
+            'title': {'text': 'W/m²', 'side': 'right'},
+            'tickformat': '.1f'
+        },
         hovertemplate='X: %{x:.0f}mm<br>Y: %{y:.0f}mm<br>Irradiance: %{z:.1f} W/m²<extra></extra>'
     ))
 
@@ -454,10 +562,10 @@ def create_uniformity_heatmap(data: dict) -> go.Figure:
         y=[ref_y],
         mode='markers+text',
         name='Reference Cell',
-        marker=dict(size=20, color='#EF4444', symbol='x', line=dict(width=3, color='white')),
+        marker={'size': 20, 'color': '#EF4444', 'symbol': 'x', 'line': {'width': 3, 'color': 'white'}},
         text=['REF'],
         textposition='top center',
-        textfont=dict(color='#EF4444', size=12, family='Arial Black'),
+        textfont={'color': '#EF4444', 'size': 12, 'family': 'Arial Black'},
         hovertemplate='<b>Reference Cell Position</b><br>X: %{x:.0f}mm<br>Y: %{y:.0f}mm<br>Irradiance: ' +
                       f'{data["ref_cell_actual"]:.1f} W/m²<extra></extra>'
     ))
@@ -469,21 +577,13 @@ def create_uniformity_heatmap(data: dict) -> go.Figure:
         fig.add_hline(y=yi, line_width=0.5, line_color="rgba(0,0,0,0.1)")
 
     fig.update_layout(
-        title=dict(
-            text="Irradiance Uniformity Map (11×11 Grid)",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(
-            title="X Position (mm)",
-            gridcolor="#E2E8F0",
-            scaleanchor="y",
-            scaleratio=1
-        ),
-        yaxis=dict(title="Y Position (mm)", gridcolor="#E2E8F0"),
+        title={'text': "Irradiance Uniformity Map (11x11 Grid)", 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "X Position (mm)", 'gridcolor': "#E2E8F0", 'scaleanchor': "y", 'scaleratio': 1},
+        yaxis={'title': "Y Position (mm)", 'gridcolor': "#E2E8F0"},
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=500,
-        margin=dict(l=60, r=80, t=60, b=60),
+        margin={'l': 60, 'r': 80, 't': 60, 'b': 60},
     )
 
     return fig
@@ -514,7 +614,7 @@ def create_reference_cell_chart(data: dict) -> go.Figure:
         y=max(values) + 5,
         text=f"Correction Factor: {cf:.4f}",
         showarrow=False,
-        font=dict(size=14, color="#1E3A5F", family="Arial Black"),
+        font={'size': 14, 'color': "#1E3A5F", 'family': "Arial Black"},
         bgcolor="rgba(255,255,255,0.8)",
         bordercolor="#1E3A5F",
         borderwidth=1,
@@ -522,17 +622,13 @@ def create_reference_cell_chart(data: dict) -> go.Figure:
     )
 
     fig.update_layout(
-        title=dict(
-            text="Reference Cell Position Analysis",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(title="", gridcolor="#E2E8F0"),
-        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0",
-                   range=[min(values) - 10, max(values) + 15]),
+        title={'text': "Reference Cell Position Analysis", 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': "Irradiance (W/m²)", 'gridcolor': "#E2E8F0", 'range': [min(values) - 10, max(values) + 15]},
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=300,
-        margin=dict(l=60, r=40, t=60, b=40),
+        margin={'l': 60, 'r': 40, 't': 60, 'b': 40},
         showlegend=False,
     )
 
@@ -557,7 +653,7 @@ def create_sti_chart(data: dict) -> go.Figure:
         y=irr_ds,
         mode='lines',
         name='Irradiance',
-        line=dict(color='#6366F1', width=1),
+        line={'color': '#6366F1', 'width': 1},
         hovertemplate='Time: %{x:.2f}s<br>Irradiance: %{y:.2f} W/m²<extra></extra>'
     ))
 
@@ -579,7 +675,7 @@ def create_sti_chart(data: dict) -> go.Figure:
         y=max_val + 2,
         text=f"STI: {sti_val:.3f}%",
         showarrow=False,
-        font=dict(size=12, color="#1E3A5F"),
+        font={'size': 12, 'color': "#1E3A5F"},
         bgcolor="white",
         bordercolor="#1E3A5F",
         borderwidth=1,
@@ -587,16 +683,13 @@ def create_sti_chart(data: dict) -> go.Figure:
     )
 
     fig.update_layout(
-        title=dict(
-            text="Short-Term Instability (STI) - 60s Measurement",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(title="Time (seconds)", gridcolor="#E2E8F0"),
-        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0"),
+        title={'text': "Short-Term Instability (STI) - 60s Measurement", 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "Time (seconds)", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': "Irradiance (W/m²)", 'gridcolor': "#E2E8F0"},
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=350,
-        margin=dict(l=60, r=80, t=60, b=60),
+        margin={'l': 60, 'r': 80, 't': 60, 'b': 60},
         showlegend=False,
     )
 
@@ -616,7 +709,7 @@ def create_lti_chart(data: dict) -> go.Figure:
         y=irr,
         mode='lines',
         name='Irradiance',
-        line=dict(color='#F59E0B', width=2),
+        line={'color': '#F59E0B', 'width': 2},
         fill='tozeroy',
         fillcolor='rgba(245, 158, 11, 0.1)',
         hovertemplate='Time: %{x:.1f} min<br>Irradiance: %{y:.2f} W/m²<extra></extra>'
@@ -641,7 +734,7 @@ def create_lti_chart(data: dict) -> go.Figure:
         y=max_val + 2,
         text=f"LTI: {lti_val:.3f}%",
         showarrow=False,
-        font=dict(size=12, color="#1E3A5F"),
+        font={'size': 12, 'color': "#1E3A5F"},
         bgcolor="white",
         bordercolor="#1E3A5F",
         borderwidth=1,
@@ -649,16 +742,61 @@ def create_lti_chart(data: dict) -> go.Figure:
     )
 
     fig.update_layout(
-        title=dict(
-            text="Long-Term Instability (LTI) - 10 Minute Measurement",
-            font=dict(size=16, color="#1E3A5F")
-        ),
-        xaxis=dict(title="Time (minutes)", gridcolor="#E2E8F0"),
-        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0"),
+        title={'text': "Long-Term Instability (LTI) - 10 Minute Measurement", 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "Time (minutes)", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': "Irradiance (W/m²)", 'gridcolor': "#E2E8F0"},
         plot_bgcolor="white",
         paper_bgcolor="white",
         height=350,
-        margin=dict(l=80, r=80, t=60, b=60),
+        margin={'l': 80, 'r': 80, 't': 60, 'b': 60},
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_spc_control_chart(spc_data: dict, data_type: str = "uniformity") -> go.Figure:
+    """Create SPC control chart with control limits"""
+    fig = go.Figure()
+
+    if data_type == "uniformity":
+        spc = spc_data["uniformity"]
+        title = "Uniformity SPC Control Chart"
+        y_label = "Irradiance (W/m²)"
+    else:
+        spc = spc_data["temporal"]
+        title = "Temporal SPC Control Chart"
+        y_label = "Irradiance (W/m²)"
+
+    mean_val = spc["mean"]
+    ucl = spc["ucl"]
+    lcl = spc["lcl"]
+
+    # Control limit bands
+    fig.add_hrect(y0=lcl, y1=ucl, fillcolor="rgba(34, 197, 94, 0.1)", line_width=0)
+
+    # Control lines
+    fig.add_hline(y=mean_val, line_dash="solid", line_color="#1E3A5F", line_width=2,
+                  annotation_text=f"Mean: {mean_val:.2f}", annotation_position="right")
+    fig.add_hline(y=ucl, line_dash="dash", line_color="#EF4444", line_width=1,
+                  annotation_text=f"UCL: {ucl:.2f}", annotation_position="right")
+    fig.add_hline(y=lcl, line_dash="dash", line_color="#EF4444", line_width=1,
+                  annotation_text=f"LCL: {lcl:.2f}", annotation_position="right")
+
+    # Add warning limits (2-sigma)
+    uwl = mean_val + 2 * spc["std"]
+    lwl = mean_val - 2 * spc["std"]
+    fig.add_hline(y=uwl, line_dash="dot", line_color="#F59E0B", line_width=1)
+    fig.add_hline(y=lwl, line_dash="dot", line_color="#F59E0B", line_width=1)
+
+    fig.update_layout(
+        title={'text': title, 'font': {'size': 16, 'color': "#1E3A5F"}},
+        xaxis={'title': "Sample", 'gridcolor': "#E2E8F0"},
+        yaxis={'title': y_label, 'gridcolor': "#E2E8F0"},
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=300,
+        margin={'l': 60, 'r': 100, 't': 60, 'b': 40},
         showlegend=False,
     )
 
@@ -696,7 +834,7 @@ def create_classification_summary_chart(spectral_grade, uniformity_grade, tempor
                 value=grade_values[grade],
                 title={'text': f"{name}<br><b style='font-size:24px'>{grade.value}</b>",
                        'font': {'size': 14, 'color': '#64748B'}},
-                number={'suffix': '', 'font': {'size': 1, 'color': 'rgba(0,0,0,0)'}},
+                number={'font': {'size': 1, 'color': 'rgba(0,0,0,0)'}},
                 gauge={
                     'axis': {'range': [0, 100], 'visible': False},
                     'bar': {'color': color, 'thickness': 0.8},
@@ -715,47 +853,8 @@ def create_classification_summary_chart(spectral_grade, uniformity_grade, tempor
 
     fig.update_layout(
         height=250,
-        margin=dict(l=30, r=30, t=50, b=30),
+        margin={'l': 30, 'r': 30, 't': 50, 'b': 30},
         paper_bgcolor='rgba(0,0,0,0)',
-    )
-
-    return fig
-
-
-def create_gauge_chart(value: float, max_value: float, title: str, grade: ClassificationGrade) -> go.Figure:
-    """Create a gauge chart for metric visualization"""
-    color = get_grade_color(grade)
-
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=value,
-        domain={'x': [0, 1], 'y': [0, 1]},
-        title={'text': title, 'font': {'size': 14, 'color': '#64748B'}},
-        number={'suffix': '%', 'font': {'size': 24, 'color': '#1E3A5F'}},
-        gauge={
-            'axis': {'range': [0, max_value], 'tickwidth': 1, 'tickcolor': "#E2E8F0"},
-            'bar': {'color': color},
-            'bgcolor': "white",
-            'borderwidth': 0,
-            'steps': [
-                {'range': [0, max_value * 0.1], 'color': '#D1FAE5'},
-                {'range': [max_value * 0.1, max_value * 0.2], 'color': '#FEF3C7'},
-                {'range': [max_value * 0.2, max_value * 0.5], 'color': '#FEE2E2'},
-                {'range': [max_value * 0.5, max_value], 'color': '#FECACA'},
-            ],
-            'threshold': {
-                'line': {'color': "#1E3A5F", 'width': 2},
-                'thickness': 0.75,
-                'value': value
-            }
-        }
-    ))
-
-    fig.update_layout(
-        height=200,
-        margin=dict(l=20, r=20, t=40, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': '#1E3A5F'}
     )
 
     return fig
@@ -835,22 +934,36 @@ def main():
     st.divider()
 
     # Tabbed Analysis Sections
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         ":material/ssid_chart: Spectral Match",
         ":material/grid_on: Non-Uniformity",
         ":material/timeline: Temporal Stability",
+        ":material/analytics: SPC Analysis",
         ":material/check_circle: Classification Result"
     ])
 
     # Tab 1: Spectral Match
     with tab1:
-        st.markdown("### Spectral Distribution Analysis")
+        st.markdown("### Spectral Distribution Analysis (SPD)")
         st.markdown("""
         <div class="info-box">
             <strong>IEC 60904-9 Ed.3 Spectral Match:</strong> Comparison of simulator spectrum to AM1.5G
             reference across 6 wavelength bands (400-1100nm). Each band ratio must fall within classification thresholds.
         </div>
         """, unsafe_allow_html=True)
+
+        # SPD Metrics
+        spd = data['spectral']['spd_metrics']
+        spd_col1, spd_col2, spd_col3, spd_col4 = st.columns(4)
+
+        with spd_col1:
+            st.metric("Spectral Mismatch Factor (M)", f"{spd['spectral_mismatch_factor']:.4f}")
+        with spd_col2:
+            st.metric("Mean Ratio", f"{spd['mean_ratio']:.4f}")
+        with spd_col3:
+            st.metric("Std Dev (Ratio)", f"{spd['std_ratio']:.4f}")
+        with spd_col4:
+            st.metric("Weighted Deviation", f"{spd['weighted_deviation_percent']:.2f}%")
 
         # Spectral comparison chart
         fig_spectral = create_spectral_comparison_chart(data['spectral']['data'])
@@ -878,8 +991,8 @@ def main():
         st.markdown("### Spatial Uniformity Analysis")
         st.markdown("""
         <div class="info-box">
-            <strong>IEC 60904-9 Ed.3 Non-Uniformity:</strong> Irradiance measured across 11×11 grid points.
-            Non-uniformity = (E_max - E_min) / (E_max + E_min) × 100%. Reference cell position marked.
+            <strong>IEC 60904-9 Ed.3 Non-Uniformity:</strong> Irradiance measured across 11x11 grid points.
+            Non-uniformity = (E_max - E_min) / (E_max + E_min) x 100%. Reference cell position marked.
         </div>
         """, unsafe_allow_html=True)
 
@@ -942,7 +1055,7 @@ def main():
             <strong>IEC 60904-9 Ed.3 Temporal Instability:</strong><br>
             <b>STI (Short-Term Instability):</b> Measured during I-V sweep (~1s to 60s)<br>
             <b>LTI (Long-Term Instability):</b> Measured over extended periods (minutes to hours)<br>
-            Formula: Instability = (E_max - E_min) / (E_max + E_min) × 100%
+            Formula: Instability = (E_max - E_min) / (E_max + E_min) x 100%
         </div>
         """, unsafe_allow_html=True)
 
@@ -983,8 +1096,56 @@ def main():
         fig_lti = create_lti_chart(data['temporal'])
         st.plotly_chart(fig_lti, use_container_width=True)
 
-    # Tab 4: Classification Result Summary
+    # Tab 4: SPC Analysis
     with tab4:
+        st.markdown("### Statistical Process Control (SPC) Analysis")
+        st.markdown("""
+        <div class="spc-card">
+            <strong>SPC Metrics:</strong> Control charts and capability indices for monitoring
+            solar simulator performance stability. UCL/LCL = 3-sigma control limits.
+        </div>
+        """, unsafe_allow_html=True)
+
+        spc = data['spc']
+
+        # Uniformity SPC
+        st.markdown("#### Uniformity SPC Metrics")
+        spc_u = spc['uniformity']
+
+        u_col1, u_col2, u_col3, u_col4 = st.columns(4)
+        with u_col1:
+            st.metric("Cp (Capability)", f"{spc_u['cp']:.3f}")
+        with u_col2:
+            st.metric("Cpk (Capability Index)", f"{spc_u['cpk']:.3f}")
+        with u_col3:
+            st.metric("Out-of-Control %", f"{spc_u['ooc_percent']:.2f}%")
+        with u_col4:
+            st.metric("Standard Deviation", f"{spc_u['std']:.3f} W/m²")
+
+        fig_spc_u = create_spc_control_chart(spc, "uniformity")
+        st.plotly_chart(fig_spc_u, use_container_width=True)
+
+        st.markdown("---")
+
+        # Temporal SPC
+        st.markdown("#### Temporal Stability SPC Metrics")
+        spc_t = spc['temporal']
+
+        t_col1, t_col2, t_col3, t_col4 = st.columns(4)
+        with t_col1:
+            st.metric("Mean", f"{spc_t['mean']:.2f} W/m²")
+        with t_col2:
+            st.metric("Std Dev", f"{spc_t['std']:.3f} W/m²")
+        with t_col3:
+            st.metric("UCL (3-sigma)", f"{spc_t['ucl']:.2f} W/m²")
+        with t_col4:
+            st.metric("LCL (3-sigma)", f"{spc_t['lcl']:.2f} W/m²")
+
+        fig_spc_t = create_spc_control_chart(spc, "temporal")
+        st.plotly_chart(fig_spc_t, use_container_width=True)
+
+    # Tab 5: Classification Result Summary
+    with tab5:
         st.markdown("### Overall Classification Summary")
 
         # Summary visualization
@@ -1059,7 +1220,7 @@ def main():
             | Operator | {test['operator']} |
             | Laboratory | {test['laboratory']} |
             | Certificate No. | {test['certificate']} |
-            | Ambient Temp | {test['ambient_temp']:.1f} °C |
+            | Ambient Temp | {test['ambient_temp']:.1f} C |
             """)
 
     # Thresholds Reference

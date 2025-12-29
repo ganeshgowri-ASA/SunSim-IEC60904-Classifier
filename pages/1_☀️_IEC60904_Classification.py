@@ -448,8 +448,7 @@ def create_uniformity_heatmap(uniformity_df: pd.DataFrame, results: dict) -> go.
             [1, '#00D4AA']
         ],
         colorbar=dict(
-            title="W/m²",
-            titlefont=dict(color='#FAFAFA'),
+            title=dict(text="W/m²", font=dict(color='#FAFAFA')),
             tickfont=dict(color='#FAFAFA')
         ),
         hovertemplate='Position (%{x}, %{y})<br>Irradiance: %{z:.1f} W/m²<extra></extra>'

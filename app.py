@@ -187,7 +187,7 @@ st.markdown("""
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;            ;
+        font-size: 2.5rem;   
         font-weight: bold;
         background: linear-gradient(90deg, #00D4AA, #4ECDC4);
         -webkit-background-clip: text;

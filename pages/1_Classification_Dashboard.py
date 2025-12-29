@@ -1,15 +1,23 @@
 """
-Classification Dashboard - Main Overview
-IEC 60904-9 Ed.3 Solar Simulator Classification
+IEC 60904-9 Ed.3 Classification Dashboard
+==========================================
 
-Displays overall classification with Spectral Match, Uniformity,
-and Temporal Stability grade badges.
+Comprehensive solar simulator classification dashboard with:
+- Spectral Match analysis with 6 wavelength bands (AM1.5G reference)
+- Non-Uniformity heatmap with reference cell position marking
+- Temporal Stability (STI/LTI) time-series analysis
+- Overall classification summary visualization
+
+Follows IEC 60904-9:2020 (Edition 3) standard requirements.
 """
 
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import numpy as np
+import pandas as pd
 import sys
 from pathlib import Path
 
@@ -19,16 +27,27 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from db_models import (
     ClassificationGrade,
     CLASSIFICATION_THRESHOLDS,
+    WAVELENGTH_INTERVALS_ED2,
     get_grade_color,
     get_grade_description,
 )
 
 # Page configuration
 st.set_page_config(
-    page_title="Classification Dashboard | SunSim",
+    page_title="IEC 60904-9 Classification | SunSim",
     page_icon=":material/dashboard:",
     layout="wide",
 )
+
+# IEC 60904-9 Ed.3 Wavelength Bands (6 intervals per Ed.2/Ed.3 simplified)
+WAVELENGTH_BANDS = [
+    {"range": "400-500nm", "start": 400, "end": 500, "color": "#8B5CF6", "name": "UV-Violet", "am15g_fraction": 18.4},
+    {"range": "500-600nm", "start": 500, "end": 600, "color": "#22C55E", "name": "Green", "am15g_fraction": 19.9},
+    {"range": "600-700nm", "start": 600, "end": 700, "color": "#EAB308", "name": "Yellow-Orange", "am15g_fraction": 18.4},
+    {"range": "700-800nm", "start": 700, "end": 800, "color": "#F97316", "name": "Red", "am15g_fraction": 14.9},
+    {"range": "800-900nm", "start": 800, "end": 900, "color": "#EF4444", "name": "Near-IR 1", "am15g_fraction": 12.5},
+    {"range": "900-1100nm", "start": 900, "end": 1100, "color": "#991B1B", "name": "Near-IR 2", "am15g_fraction": 15.9},
+]
 
 # Custom CSS
 st.markdown("""
@@ -113,80 +132,144 @@ st.markdown("""
         margin-top: 0.5rem;
     }
 
-    .metric-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 0.75rem 0;
-        border-bottom: 1px solid #F1F5F9;
-    }
-
-    .metric-label {
-        color: #64748B;
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+        border: 1px solid #E2E8F0;
+        text-align: center;
     }
 
     .metric-value {
-        font-weight: 600;
+        font-size: 1.75rem;
+        font-weight: 700;
         color: #1E3A5F;
     }
 
-    .status-badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.25rem 0.75rem;
-        border-radius: 9999px;
+    .metric-label {
+        font-size: 0.8rem;
+        color: #64748B;
+        margin-top: 0.25rem;
+    }
+
+    .info-box {
+        background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+        border-left: 4px solid #6366F1;
+        border-radius: 0 8px 8px 0;
+        padding: 1rem 1.25rem;
+        margin: 1rem 0;
+    }
+
+    .ref-cell-marker {
+        background: #EF4444;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
         font-size: 0.75rem;
         font-weight: 600;
-    }
-
-    .status-pass {
-        background: #D1FAE5;
-        color: #065F46;
-    }
-
-    .status-warning {
-        background: #FEF3C7;
-        color: #92400E;
-    }
-
-    .info-section {
-        background: #F8FAFC;
-        border-radius: 12px;
-        padding: 1.5rem;
-        margin-top: 1.5rem;
-    }
-
-    .info-title {
-        font-weight: 600;
-        color: #1E3A5F;
-        margin-bottom: 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-def generate_sample_data():
-    """Generate sample classification data for demonstration"""
+def generate_comprehensive_sample_data():
+    """Generate comprehensive sample data for all classification parameters"""
+    np.random.seed(42)
+
+    # Spectral Match Data - 6 wavelength bands
+    spectral_data = []
+    for band in WAVELENGTH_BANDS:
+        # Simulate measured fraction with slight deviation from reference
+        noise = np.random.uniform(-0.08, 0.08)
+        measured = band["am15g_fraction"] * (1 + noise)
+        ratio = measured / band["am15g_fraction"]
+        spectral_data.append({
+            "band": band["range"],
+            "name": band["name"],
+            "color": band["color"],
+            "start": band["start"],
+            "end": band["end"],
+            "reference": band["am15g_fraction"],
+            "measured": measured,
+            "ratio": ratio,
+            "in_spec": 0.875 <= ratio <= 1.125
+        })
+
+    # Uniformity Grid Data - 11x11 grid with reference cell position
+    grid_size = 11
+    plane_size = 200  # mm
+    uniformity_grid = np.zeros((grid_size, grid_size))
+    target_irradiance = 1000.0
+
+    for i in range(grid_size):
+        for j in range(grid_size):
+            x = -plane_size/2 + i * plane_size/(grid_size-1)
+            y = -plane_size/2 + j * plane_size/(grid_size-1)
+            # Edge falloff effect
+            distance = np.sqrt(x**2 + y**2)
+            max_dist = np.sqrt(2) * plane_size/2
+            edge_effect = 1 - 0.008 * (distance / max_dist)
+            noise = np.random.uniform(-0.003, 0.003)
+            uniformity_grid[i, j] = target_irradiance * edge_effect * (1 + noise)
+
+    # Reference cell position (center-right area)
+    ref_cell_pos = (6, 5)  # Grid indices
+    ref_cell_actual = uniformity_grid[ref_cell_pos]
+    ref_cell_avg = np.mean(uniformity_grid)
+    correction_factor = ref_cell_avg / ref_cell_actual
+
+    # Temporal Stability Data
+    duration = 60  # seconds
+    sampling_rate = 100  # Hz
+    num_samples = duration * sampling_rate
+    t = np.linspace(0, duration, num_samples)
+
+    # STI data (short-term, 1 second windows)
+    sti_base = target_irradiance
+    sti_noise = np.random.normal(0, 2, num_samples)  # Small noise for A+ grade
+    sti_drift = 1.5 * np.sin(2 * np.pi * t / 30)  # Slow drift
+    sti_data = sti_base + sti_noise + sti_drift
+
+    # LTI data (long-term, over minutes)
+    lti_duration = 600  # 10 minutes
+    lti_samples = 600
+    lti_t = np.linspace(0, lti_duration, lti_samples)
+    lti_drift = 3 * np.sin(2 * np.pi * lti_t / 300) + np.random.normal(0, 1.5, lti_samples)
+    lti_data = target_irradiance + lti_drift
+
     return {
-        "spectral_match": {
+        "spectral": {
+            "data": spectral_data,
+            "min_ratio": min(d["ratio"] for d in spectral_data),
+            "max_ratio": max(d["ratio"] for d in spectral_data),
             "grade": ClassificationGrade.A_PLUS,
-            "min_ratio": 0.92,
-            "max_ratio": 1.08,
-            "intervals_in_spec": 100,
-            "total_intervals": 100,
         },
         "uniformity": {
+            "grid": uniformity_grid,
+            "grid_size": grid_size,
+            "plane_size": plane_size,
+            "min": np.min(uniformity_grid),
+            "max": np.max(uniformity_grid),
+            "mean": np.mean(uniformity_grid),
+            "non_uniformity": (np.max(uniformity_grid) - np.min(uniformity_grid)) /
+                             (np.max(uniformity_grid) + np.min(uniformity_grid)) * 100,
+            "ref_cell_pos": ref_cell_pos,
+            "ref_cell_actual": ref_cell_actual,
+            "ref_cell_avg": ref_cell_avg,
+            "correction_factor": correction_factor,
             "grade": ClassificationGrade.A_PLUS,
-            "non_uniformity": 0.78,
-            "min_irradiance": 995.2,
-            "max_irradiance": 1010.8,
-            "mean_irradiance": 1002.5,
         },
-        "temporal_stability": {
-            "grade": ClassificationGrade.A,
-            "sti": 0.42,
-            "lti": 0.85,
-            "min_irradiance": 998.1,
-            "max_irradiance": 1006.3,
+        "temporal": {
+            "sti_time": t,
+            "sti_data": sti_data,
+            "sti_value": (np.max(sti_data) - np.min(sti_data)) / (np.max(sti_data) + np.min(sti_data)) * 100,
+            "lti_time": lti_t,
+            "lti_data": lti_data,
+            "lti_value": (np.max(lti_data) - np.min(lti_data)) / (np.max(lti_data) + np.min(lti_data)) * 100,
+            "sti_grade": ClassificationGrade.A,
+            "lti_grade": ClassificationGrade.A,
+            "overall_grade": ClassificationGrade.A,
         },
         "equipment": {
             "manufacturer": "SunSim Technologies",
@@ -210,13 +293,433 @@ def generate_sample_data():
 
 def get_grade_class(grade: ClassificationGrade) -> str:
     """Get CSS class for grade badge"""
-    grade_classes = {
+    return {
         ClassificationGrade.A_PLUS: "grade-a-plus",
         ClassificationGrade.A: "grade-a",
         ClassificationGrade.B: "grade-b",
         ClassificationGrade.C: "grade-c",
+    }.get(grade, "grade-c")
+
+
+def create_spectral_comparison_chart(spectral_data: list) -> go.Figure:
+    """Create spectral distribution comparison chart with 6 wavelength bands"""
+    fig = go.Figure()
+
+    bands = [d["band"] for d in spectral_data]
+    reference = [d["reference"] for d in spectral_data]
+    measured = [d["measured"] for d in spectral_data]
+    colors = [d["color"] for d in spectral_data]
+
+    # Reference spectrum bars
+    fig.add_trace(go.Bar(
+        name='AM1.5G Reference',
+        x=bands,
+        y=reference,
+        marker_color='rgba(99, 102, 241, 0.7)',
+        marker_line=dict(color='#4F46E5', width=2),
+        hovertemplate='<b>%{x}</b><br>Reference: %{y:.2f}%<extra></extra>'
+    ))
+
+    # Measured spectrum bars
+    fig.add_trace(go.Bar(
+        name='Measured Spectrum',
+        x=bands,
+        y=measured,
+        marker_color=colors,
+        marker_line=dict(color='#1E3A5F', width=2),
+        hovertemplate='<b>%{x}</b><br>Measured: %{y:.2f}%<extra></extra>'
+    ))
+
+    # Add threshold lines
+    fig.add_hline(y=0, line_dash="solid", line_color="#94A3B8", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text="Spectral Distribution: Measured vs AM1.5G Reference",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(
+            title="Wavelength Band",
+            gridcolor="#E2E8F0",
+        ),
+        yaxis=dict(
+            title="Spectral Fraction (%)",
+            gridcolor="#E2E8F0",
+        ),
+        barmode='group',
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=400,
+        margin=dict(l=60, r=40, t=60, b=60),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        ),
+        hovermode="x unified"
+    )
+
+    return fig
+
+
+def create_spectral_ratio_chart(spectral_data: list) -> go.Figure:
+    """Create spectral match ratio chart with threshold bands"""
+    fig = go.Figure()
+
+    bands = [d["band"] for d in spectral_data]
+    ratios = [d["ratio"] for d in spectral_data]
+    colors = [d["color"] for d in spectral_data]
+
+    # Threshold bands
+    fig.add_hrect(y0=0.4, y1=2.0, fillcolor="rgba(239, 68, 68, 0.1)", line_width=0)
+    fig.add_hrect(y0=0.6, y1=1.4, fillcolor="rgba(245, 158, 11, 0.1)", line_width=0)
+    fig.add_hrect(y0=0.75, y1=1.25, fillcolor="rgba(34, 197, 94, 0.1)", line_width=0)
+    fig.add_hrect(y0=0.875, y1=1.125, fillcolor="rgba(16, 185, 129, 0.2)", line_width=0)
+
+    # Reference line at 1.0
+    fig.add_hline(y=1.0, line_dash="solid", line_color="#1E3A5F", line_width=2)
+
+    # Threshold lines
+    fig.add_hline(y=0.875, line_dash="dash", line_color="#10B981", line_width=1,
+                  annotation_text="A+ min", annotation_position="right")
+    fig.add_hline(y=1.125, line_dash="dash", line_color="#10B981", line_width=1,
+                  annotation_text="A+ max", annotation_position="right")
+
+    # Ratio markers
+    marker_colors = ["#10B981" if 0.875 <= r <= 1.125 else "#EF4444" for r in ratios]
+    fig.add_trace(go.Scatter(
+        x=bands,
+        y=ratios,
+        mode='markers+lines',
+        name='Spectral Match Ratio',
+        marker=dict(size=14, color=marker_colors, line=dict(width=2, color='white')),
+        line=dict(color='#1E3A5F', width=2),
+        hovertemplate='<b>%{x}</b><br>Ratio: %{y:.3f}<extra></extra>'
+    ))
+
+    fig.update_layout(
+        title=dict(
+            text="Spectral Match Ratio per Wavelength Band",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(title="Wavelength Band", gridcolor="#E2E8F0"),
+        yaxis=dict(title="Ratio (Measured/Reference)", gridcolor="#E2E8F0", range=[0.6, 1.5]),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=350,
+        margin=dict(l=60, r=80, t=60, b=60),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_uniformity_heatmap(data: dict) -> go.Figure:
+    """Create uniformity heatmap with reference cell position marked"""
+    grid = data["grid"]
+    grid_size = data["grid_size"]
+    plane_size = data["plane_size"]
+    ref_pos = data["ref_cell_pos"]
+
+    # Create coordinate arrays
+    x = np.linspace(-plane_size/2, plane_size/2, grid_size)
+    y = np.linspace(-plane_size/2, plane_size/2, grid_size)
+
+    fig = go.Figure()
+
+    # Heatmap
+    fig.add_trace(go.Heatmap(
+        z=grid,
+        x=x,
+        y=y,
+        colorscale='RdYlGn',
+        reversescale=False,
+        zmin=data["min"] - 2,
+        zmax=data["max"] + 2,
+        colorbar=dict(
+            title=dict(text='W/m²', side='right'),
+            tickformat='.1f'
+        ),
+        hovertemplate='X: %{x:.0f}mm<br>Y: %{y:.0f}mm<br>Irradiance: %{z:.1f} W/m²<extra></extra>'
+    ))
+
+    # Mark reference cell position
+    ref_x = x[ref_pos[0]]
+    ref_y = y[ref_pos[1]]
+
+    fig.add_trace(go.Scatter(
+        x=[ref_x],
+        y=[ref_y],
+        mode='markers+text',
+        name='Reference Cell',
+        marker=dict(size=20, color='#EF4444', symbol='x', line=dict(width=3, color='white')),
+        text=['REF'],
+        textposition='top center',
+        textfont=dict(color='#EF4444', size=12, family='Arial Black'),
+        hovertemplate='<b>Reference Cell Position</b><br>X: %{x:.0f}mm<br>Y: %{y:.0f}mm<br>Irradiance: ' +
+                      f'{data["ref_cell_actual"]:.1f} W/m²<extra></extra>'
+    ))
+
+    # Add grid lines
+    for xi in x:
+        fig.add_vline(x=xi, line_width=0.5, line_color="rgba(0,0,0,0.1)")
+    for yi in y:
+        fig.add_hline(y=yi, line_width=0.5, line_color="rgba(0,0,0,0.1)")
+
+    fig.update_layout(
+        title=dict(
+            text="Irradiance Uniformity Map (11×11 Grid)",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(
+            title="X Position (mm)",
+            gridcolor="#E2E8F0",
+            scaleanchor="y",
+            scaleratio=1
+        ),
+        yaxis=dict(title="Y Position (mm)", gridcolor="#E2E8F0"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=500,
+        margin=dict(l=60, r=80, t=60, b=60),
+    )
+
+    return fig
+
+
+def create_reference_cell_chart(data: dict) -> go.Figure:
+    """Create reference cell position visualization with correction factor"""
+    fig = go.Figure()
+
+    # Bar comparison
+    categories = ['Grid Average', 'Ref Cell Actual']
+    values = [data["ref_cell_avg"], data["ref_cell_actual"]]
+    colors = ['#6366F1', '#EF4444']
+
+    fig.add_trace(go.Bar(
+        x=categories,
+        y=values,
+        marker_color=colors,
+        text=[f'{v:.2f}' for v in values],
+        textposition='outside',
+        hovertemplate='%{x}: %{y:.2f} W/m²<extra></extra>'
+    ))
+
+    # Add correction factor annotation
+    cf = data["correction_factor"]
+    fig.add_annotation(
+        x=0.5,
+        y=max(values) + 5,
+        text=f"Correction Factor: {cf:.4f}",
+        showarrow=False,
+        font=dict(size=14, color="#1E3A5F", family="Arial Black"),
+        bgcolor="rgba(255,255,255,0.8)",
+        bordercolor="#1E3A5F",
+        borderwidth=1,
+        borderpad=8
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Reference Cell Position Analysis",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(title="", gridcolor="#E2E8F0"),
+        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0",
+                   range=[min(values) - 10, max(values) + 15]),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=300,
+        margin=dict(l=60, r=40, t=60, b=40),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_sti_chart(data: dict) -> go.Figure:
+    """Create Short-Term Instability (STI) time series chart"""
+    t = data["sti_time"]
+    irr = data["sti_data"]
+
+    # Downsample for display
+    step = max(1, len(t) // 1000)
+    t_ds = t[::step]
+    irr_ds = irr[::step]
+
+    fig = go.Figure()
+
+    # Main trace
+    fig.add_trace(go.Scatter(
+        x=t_ds,
+        y=irr_ds,
+        mode='lines',
+        name='Irradiance',
+        line=dict(color='#6366F1', width=1),
+        hovertemplate='Time: %{x:.2f}s<br>Irradiance: %{y:.2f} W/m²<extra></extra>'
+    ))
+
+    # Mean line
+    mean_val = np.mean(irr)
+    fig.add_hline(y=mean_val, line_dash="dash", line_color="#1E3A5F", line_width=2,
+                  annotation_text=f"Mean: {mean_val:.1f} W/m²", annotation_position="right")
+
+    # Min/Max bounds
+    min_val = np.min(irr)
+    max_val = np.max(irr)
+    fig.add_hrect(y0=min_val, y1=max_val, fillcolor="rgba(99, 102, 241, 0.1)", line_width=0)
+    fig.add_hline(y=min_val, line_dash="dot", line_color="#EF4444", line_width=1)
+    fig.add_hline(y=max_val, line_dash="dot", line_color="#EF4444", line_width=1)
+
+    sti_val = data["sti_value"]
+    fig.add_annotation(
+        x=t_ds[-1] * 0.02,
+        y=max_val + 2,
+        text=f"STI: {sti_val:.3f}%",
+        showarrow=False,
+        font=dict(size=12, color="#1E3A5F"),
+        bgcolor="white",
+        bordercolor="#1E3A5F",
+        borderwidth=1,
+        borderpad=4
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Short-Term Instability (STI) - 60s Measurement",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(title="Time (seconds)", gridcolor="#E2E8F0"),
+        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=350,
+        margin=dict(l=60, r=80, t=60, b=60),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_lti_chart(data: dict) -> go.Figure:
+    """Create Long-Term Instability (LTI) time series chart"""
+    t = data["lti_time"] / 60  # Convert to minutes
+    irr = data["lti_data"]
+
+    fig = go.Figure()
+
+    # Main trace
+    fig.add_trace(go.Scatter(
+        x=t,
+        y=irr,
+        mode='lines',
+        name='Irradiance',
+        line=dict(color='#F59E0B', width=2),
+        fill='tozeroy',
+        fillcolor='rgba(245, 158, 11, 0.1)',
+        hovertemplate='Time: %{x:.1f} min<br>Irradiance: %{y:.2f} W/m²<extra></extra>'
+    ))
+
+    # Mean line
+    mean_val = np.mean(irr)
+    fig.add_hline(y=mean_val, line_dash="dash", line_color="#1E3A5F", line_width=2,
+                  annotation_text=f"Mean: {mean_val:.1f} W/m²", annotation_position="right")
+
+    # Min/Max bounds
+    min_val = np.min(irr)
+    max_val = np.max(irr)
+    fig.add_hline(y=min_val, line_dash="dot", line_color="#EF4444", line_width=1,
+                  annotation_text=f"Min: {min_val:.1f}", annotation_position="left")
+    fig.add_hline(y=max_val, line_dash="dot", line_color="#EF4444", line_width=1,
+                  annotation_text=f"Max: {max_val:.1f}", annotation_position="left")
+
+    lti_val = data["lti_value"]
+    fig.add_annotation(
+        x=t[-1] * 0.95,
+        y=max_val + 2,
+        text=f"LTI: {lti_val:.3f}%",
+        showarrow=False,
+        font=dict(size=12, color="#1E3A5F"),
+        bgcolor="white",
+        bordercolor="#1E3A5F",
+        borderwidth=1,
+        borderpad=4
+    )
+
+    fig.update_layout(
+        title=dict(
+            text="Long-Term Instability (LTI) - 10 Minute Measurement",
+            font=dict(size=16, color="#1E3A5F")
+        ),
+        xaxis=dict(title="Time (minutes)", gridcolor="#E2E8F0"),
+        yaxis=dict(title="Irradiance (W/m²)", gridcolor="#E2E8F0"),
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=350,
+        margin=dict(l=80, r=80, t=60, b=60),
+        showlegend=False,
+    )
+
+    return fig
+
+
+def create_classification_summary_chart(spectral_grade, uniformity_grade, temporal_grade) -> go.Figure:
+    """Create overall classification summary visualization"""
+    fig = make_subplots(
+        rows=1, cols=3,
+        specs=[[{"type": "indicator"}, {"type": "indicator"}, {"type": "indicator"}]],
+        horizontal_spacing=0.1
+    )
+
+    # Grade to numeric for gauge
+    grade_values = {
+        ClassificationGrade.A_PLUS: 100,
+        ClassificationGrade.A: 75,
+        ClassificationGrade.B: 50,
+        ClassificationGrade.C: 25,
+        ClassificationGrade.FAIL: 0
     }
-    return grade_classes.get(grade, "grade-c")
+
+    grades = [
+        ("Spectral Match", spectral_grade),
+        ("Uniformity", uniformity_grade),
+        ("Temporal Stability", temporal_grade)
+    ]
+
+    for i, (name, grade) in enumerate(grades, 1):
+        color = get_grade_color(grade)
+        fig.add_trace(
+            go.Indicator(
+                mode="gauge+number",
+                value=grade_values[grade],
+                title={'text': f"{name}<br><b style='font-size:24px'>{grade.value}</b>",
+                       'font': {'size': 14, 'color': '#64748B'}},
+                number={'suffix': '', 'font': {'size': 1, 'color': 'rgba(0,0,0,0)'}},
+                gauge={
+                    'axis': {'range': [0, 100], 'visible': False},
+                    'bar': {'color': color, 'thickness': 0.8},
+                    'bgcolor': "#E2E8F0",
+                    'borderwidth': 0,
+                    'steps': [
+                        {'range': [0, 25], 'color': 'rgba(239,68,68,0.2)'},
+                        {'range': [25, 50], 'color': 'rgba(245,158,11,0.2)'},
+                        {'range': [50, 75], 'color': 'rgba(34,197,94,0.2)'},
+                        {'range': [75, 100], 'color': 'rgba(16,185,129,0.2)'},
+                    ],
+                }
+            ),
+            row=1, col=i
+        )
+
+    fig.update_layout(
+        height=250,
+        margin=dict(l=30, r=30, t=50, b=30),
+        paper_bgcolor='rgba(0,0,0,0)',
+    )
+
+    return fig
 
 
 def create_gauge_chart(value: float, max_value: float, title: str, grade: ClassificationGrade) -> go.Figure:
@@ -259,23 +762,23 @@ def create_gauge_chart(value: float, max_value: float, title: str, grade: Classi
 
 
 def main():
-    """Main dashboard page"""
+    """Main dashboard page with comprehensive visualizations"""
 
     # Header
-    st.markdown('<h1 class="main-title">Classification Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">IEC 60904-9 Classification Dashboard</h1>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="subtitle">IEC 60904-9 Ed.3 Overall Classification Results</p>',
+        '<p class="subtitle">Solar Simulator Classification per IEC 60904-9:2020 (Edition 3)</p>',
         unsafe_allow_html=True
     )
 
-    # Load sample data
-    data = generate_sample_data()
+    # Load comprehensive sample data
+    data = generate_comprehensive_sample_data()
 
     # Overall Classification Card
     overall_grade = (
-        f"{data['spectral_match']['grade'].value}"
+        f"{data['spectral']['grade'].value}"
         f"{data['uniformity']['grade'].value}"
-        f"{data['temporal_stability']['grade'].value}"
+        f"{data['temporal']['overall_grade'].value}"
     )
 
     st.markdown(f"""
@@ -283,27 +786,24 @@ def main():
         <div class="overall-title">Overall Classification</div>
         <div class="overall-grade">{overall_grade}</div>
         <div style="opacity: 0.8;">
-            Spectral Match: {data['spectral_match']['grade'].value} |
+            Spectral Match: {data['spectral']['grade'].value} |
             Uniformity: {data['uniformity']['grade'].value} |
-            Temporal Stability: {data['temporal_stability']['grade'].value}
+            Temporal Stability: {data['temporal']['overall_grade'].value}
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Grade cards
+    # Grade cards row
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        grade = data['spectral_match']['grade']
+        grade = data['spectral']['grade']
         st.markdown(f"""
         <div class="grade-card">
             <div class="grade-card-title">Spectral Match (SPD)</div>
             <div class="grade-badge {get_grade_class(grade)}">{grade.value}</div>
             <div class="grade-value">
-                Ratio Range: {data['spectral_match']['min_ratio']:.2f} - {data['spectral_match']['max_ratio']:.2f}
-            </div>
-            <div class="grade-value" style="margin-top: 0.5rem;">
-                {data['spectral_match']['intervals_in_spec']}/{data['spectral_match']['total_intervals']} intervals in spec
+                Ratio Range: {data['spectral']['min_ratio']:.3f} - {data['spectral']['max_ratio']:.3f}
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -317,135 +817,279 @@ def main():
             <div class="grade-value">
                 Non-Uniformity: {data['uniformity']['non_uniformity']:.2f}%
             </div>
-            <div class="grade-value" style="margin-top: 0.5rem;">
-                Mean Irradiance: {data['uniformity']['mean_irradiance']:.1f} W/m²
-            </div>
         </div>
         """, unsafe_allow_html=True)
 
     with col3:
-        grade = data['temporal_stability']['grade']
+        grade = data['temporal']['overall_grade']
         st.markdown(f"""
         <div class="grade-card">
             <div class="grade-card-title">Temporal Stability</div>
             <div class="grade-badge {get_grade_class(grade)}">{grade.value}</div>
             <div class="grade-value">
-                STI: {data['temporal_stability']['sti']:.2f}% | LTI: {data['temporal_stability']['lti']:.2f}%
-            </div>
-            <div class="grade-value" style="margin-top: 0.5rem;">
-                Range: {data['temporal_stability']['min_irradiance']:.1f} - {data['temporal_stability']['max_irradiance']:.1f} W/m²
+                STI: {data['temporal']['sti_value']:.2f}% | LTI: {data['temporal']['lti_value']:.2f}%
             </div>
         </div>
         """, unsafe_allow_html=True)
 
     st.divider()
 
-    # Gauge charts row
-    st.markdown("### Performance Metrics")
+    # Tabbed Analysis Sections
+    tab1, tab2, tab3, tab4 = st.tabs([
+        ":material/ssid_chart: Spectral Match",
+        ":material/grid_on: Non-Uniformity",
+        ":material/timeline: Temporal Stability",
+        ":material/check_circle: Classification Result"
+    ])
 
-    gauge_col1, gauge_col2, gauge_col3 = st.columns(3)
-
-    with gauge_col1:
-        deviation = max(
-            abs(1 - data['spectral_match']['min_ratio']),
-            abs(data['spectral_match']['max_ratio'] - 1)
-        ) * 100
-        fig = create_gauge_chart(
-            deviation, 50, "Spectral Deviation",
-            data['spectral_match']['grade']
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with gauge_col2:
-        fig = create_gauge_chart(
-            data['uniformity']['non_uniformity'], 10, "Non-Uniformity",
-            data['uniformity']['grade']
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with gauge_col3:
-        fig = create_gauge_chart(
-            data['temporal_stability']['sti'], 5, "Temporal Instability (STI)",
-            data['temporal_stability']['grade']
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-
-    # Equipment and Test Information
-    info_col1, info_col2 = st.columns(2)
-
-    with info_col1:
-        st.markdown("### Equipment Information")
-        equip = data['equipment']
-
-        st.markdown(f"""
-        | Parameter | Value |
-        |-----------|-------|
-        | Manufacturer | {equip['manufacturer']} |
-        | Model | {equip['model']} |
-        | Serial Number | {equip['serial']} |
-        | Lamp Type | {equip['lamp_type']} |
-        | Lamp Hours | {equip['lamp_hours']:.1f} hrs |
-        | Calibration Date | {equip['calibration_date'].strftime('%Y-%m-%d')} |
-        | Next Calibration | {equip['next_calibration'].strftime('%Y-%m-%d')} |
-        """)
-
-    with info_col2:
-        st.markdown("### Test Information")
-        test = data['test_info']
-
-        st.markdown(f"""
-        | Parameter | Value |
-        |-----------|-------|
-        | Test Date | {test['test_date'].strftime('%Y-%m-%d %H:%M')} |
-        | Operator | {test['operator']} |
-        | Laboratory | {test['laboratory']} |
-        | Certificate No. | {test['certificate']} |
-        | Ambient Temperature | {test['ambient_temp']:.1f} °C |
-        | Relative Humidity | {test['humidity']:.1f} % |
-        """)
-
-    # Classification Summary
-    st.divider()
-    st.markdown("### IEC 60904-9 Ed.3 Classification Thresholds")
-
-    threshold_data = []
-    for param, thresholds in CLASSIFICATION_THRESHOLDS.items():
-        if param == "spectral_match":
-            continue  # Handle separately due to different format
-        for grade, value in thresholds.items():
-            threshold_data.append({
-                "Parameter": param.replace("_", " ").title(),
-                "Grade": grade.value,
-                "Threshold": f"<= {value}%"
-            })
-
-    col_a, col_b = st.columns(2)
-
-    with col_a:
+    # Tab 1: Spectral Match
+    with tab1:
+        st.markdown("### Spectral Distribution Analysis")
         st.markdown("""
-        **Spectral Match Thresholds** (Ratio Range)
+        <div class="info-box">
+            <strong>IEC 60904-9 Ed.3 Spectral Match:</strong> Comparison of simulator spectrum to AM1.5G
+            reference across 6 wavelength bands (400-1100nm). Each band ratio must fall within classification thresholds.
+        </div>
+        """, unsafe_allow_html=True)
 
-        | Grade | Min Ratio | Max Ratio |
-        |-------|-----------|-----------|
-        | A+ | 0.875 | 1.125 |
-        | A | 0.75 | 1.25 |
-        | B | 0.6 | 1.4 |
-        | C | 0.4 | 2.0 |
-        """)
+        # Spectral comparison chart
+        fig_spectral = create_spectral_comparison_chart(data['spectral']['data'])
+        st.plotly_chart(fig_spectral, use_container_width=True)
 
-    with col_b:
+        # Ratio analysis
+        col_a, col_b = st.columns([2, 1])
+        with col_a:
+            fig_ratio = create_spectral_ratio_chart(data['spectral']['data'])
+            st.plotly_chart(fig_ratio, use_container_width=True)
+
+        with col_b:
+            st.markdown("#### Band Analysis")
+            for band in data['spectral']['data']:
+                status = "Pass" if band["in_spec"] else "Review"
+                status_color = "#10B981" if band["in_spec"] else "#EF4444"
+                st.markdown(f"""
+                **{band['name']}** ({band['band']})
+                - Ratio: {band['ratio']:.3f}
+                - Status: <span style="color:{status_color};font-weight:600">{status}</span>
+                """, unsafe_allow_html=True)
+
+    # Tab 2: Non-Uniformity
+    with tab2:
+        st.markdown("### Spatial Uniformity Analysis")
         st.markdown("""
-        **Uniformity & Temporal Stability Thresholds**
+        <div class="info-box">
+            <strong>IEC 60904-9 Ed.3 Non-Uniformity:</strong> Irradiance measured across 11×11 grid points.
+            Non-uniformity = (E_max - E_min) / (E_max + E_min) × 100%. Reference cell position marked.
+        </div>
+        """, unsafe_allow_html=True)
 
-        | Grade | Uniformity | STI | LTI |
-        |-------|------------|-----|-----|
-        | A+ | <= 1% | <= 0.5% | <= 1% |
-        | A | <= 2% | <= 2% | <= 2% |
-        | B | <= 5% | <= 5% | <= 5% |
-        | C | <= 10% | <= 10% | <= 10% |
-        """)
+        # Uniformity heatmap
+        fig_heatmap = create_uniformity_heatmap(data['uniformity'])
+        st.plotly_chart(fig_heatmap, use_container_width=True)
+
+        # Stats and reference cell
+        col_u1, col_u2, col_u3 = st.columns([1, 1, 1])
+
+        with col_u1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{data['uniformity']['non_uniformity']:.2f}%</div>
+                <div class="metric-label">Non-Uniformity</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_u2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{data['uniformity']['mean']:.1f}</div>
+                <div class="metric-label">Mean Irradiance (W/m²)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_u3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-value">{data['uniformity']['max'] - data['uniformity']['min']:.1f}</div>
+                <div class="metric-label">Irradiance Range (W/m²)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.markdown("#### Reference Cell Position Analysis")
+
+        ref_col1, ref_col2 = st.columns([1, 1])
+        with ref_col1:
+            fig_ref = create_reference_cell_chart(data['uniformity'])
+            st.plotly_chart(fig_ref, use_container_width=True)
+
+        with ref_col2:
+            st.markdown(f"""
+            **Reference Cell Details:**
+            - Grid Position: ({data['uniformity']['ref_cell_pos'][0]}, {data['uniformity']['ref_cell_pos'][1]})
+            - Actual Reading: {data['uniformity']['ref_cell_actual']:.2f} W/m²
+            - Grid Average: {data['uniformity']['ref_cell_avg']:.2f} W/m²
+            - **Correction Factor: {data['uniformity']['correction_factor']:.4f}**
+
+            The correction factor adjusts measurements taken at the reference
+            cell position to represent the average irradiance across the test plane.
+            """)
+
+    # Tab 3: Temporal Stability
+    with tab3:
+        st.markdown("### Temporal Stability Analysis")
+        st.markdown("""
+        <div class="info-box">
+            <strong>IEC 60904-9 Ed.3 Temporal Instability:</strong><br>
+            <b>STI (Short-Term Instability):</b> Measured during I-V sweep (~1s to 60s)<br>
+            <b>LTI (Long-Term Instability):</b> Measured over extended periods (minutes to hours)<br>
+            Formula: Instability = (E_max - E_min) / (E_max + E_min) × 100%
+        </div>
+        """, unsafe_allow_html=True)
+
+        # STI and LTI grade cards
+        sti_col, lti_col = st.columns(2)
+
+        with sti_col:
+            sti_grade = data['temporal']['sti_grade']
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="grade-badge {get_grade_class(sti_grade)}" style="font-size:1.5rem;padding:0.5rem 1rem;">
+                    {sti_grade.value}
+                </div>
+                <div class="metric-value">{data['temporal']['sti_value']:.3f}%</div>
+                <div class="metric-label">Short-Term Instability (STI)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with lti_col:
+            lti_grade = data['temporal']['lti_grade']
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="grade-badge {get_grade_class(lti_grade)}" style="font-size:1.5rem;padding:0.5rem 1rem;">
+                    {lti_grade.value}
+                </div>
+                <div class="metric-value">{data['temporal']['lti_value']:.3f}%</div>
+                <div class="metric-label">Long-Term Instability (LTI)</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("")
+
+        # STI Chart
+        fig_sti = create_sti_chart(data['temporal'])
+        st.plotly_chart(fig_sti, use_container_width=True)
+
+        # LTI Chart
+        fig_lti = create_lti_chart(data['temporal'])
+        st.plotly_chart(fig_lti, use_container_width=True)
+
+    # Tab 4: Classification Result Summary
+    with tab4:
+        st.markdown("### Overall Classification Summary")
+
+        # Summary visualization
+        fig_summary = create_classification_summary_chart(
+            data['spectral']['grade'],
+            data['uniformity']['grade'],
+            data['temporal']['overall_grade']
+        )
+        st.plotly_chart(fig_summary, use_container_width=True)
+
+        # Detailed results table
+        st.markdown("#### Classification Details")
+
+        results_df = pd.DataFrame([
+            {
+                "Parameter": "Spectral Match",
+                "Grade": data['spectral']['grade'].value,
+                "Measured Value": f"{data['spectral']['min_ratio']:.3f} - {data['spectral']['max_ratio']:.3f}",
+                "Threshold (A+)": "0.875 - 1.125",
+                "Status": "PASS" if data['spectral']['grade'] in [ClassificationGrade.A_PLUS, ClassificationGrade.A] else "REVIEW"
+            },
+            {
+                "Parameter": "Non-Uniformity",
+                "Grade": data['uniformity']['grade'].value,
+                "Measured Value": f"{data['uniformity']['non_uniformity']:.2f}%",
+                "Threshold (A+)": "<= 1%",
+                "Status": "PASS" if data['uniformity']['grade'] in [ClassificationGrade.A_PLUS, ClassificationGrade.A] else "REVIEW"
+            },
+            {
+                "Parameter": "Temporal Stability (STI)",
+                "Grade": data['temporal']['sti_grade'].value,
+                "Measured Value": f"{data['temporal']['sti_value']:.3f}%",
+                "Threshold (A+)": "<= 0.5%",
+                "Status": "PASS" if data['temporal']['sti_grade'] in [ClassificationGrade.A_PLUS, ClassificationGrade.A] else "REVIEW"
+            },
+            {
+                "Parameter": "Temporal Stability (LTI)",
+                "Grade": data['temporal']['lti_grade'].value,
+                "Measured Value": f"{data['temporal']['lti_value']:.3f}%",
+                "Threshold (A+)": "<= 1%",
+                "Status": "PASS" if data['temporal']['lti_grade'] in [ClassificationGrade.A_PLUS, ClassificationGrade.A] else "REVIEW"
+            },
+        ])
+
+        st.dataframe(results_df, use_container_width=True, hide_index=True)
+
+        # Equipment and Test info
+        st.divider()
+        info_col1, info_col2 = st.columns(2)
+
+        with info_col1:
+            st.markdown("#### Equipment Information")
+            equip = data['equipment']
+            st.markdown(f"""
+            | Parameter | Value |
+            |-----------|-------|
+            | Manufacturer | {equip['manufacturer']} |
+            | Model | {equip['model']} |
+            | Serial Number | {equip['serial']} |
+            | Lamp Type | {equip['lamp_type']} |
+            | Lamp Hours | {equip['lamp_hours']:.1f} hrs |
+            | Calibration Date | {equip['calibration_date'].strftime('%Y-%m-%d')} |
+            """)
+
+        with info_col2:
+            st.markdown("#### Test Information")
+            test = data['test_info']
+            st.markdown(f"""
+            | Parameter | Value |
+            |-----------|-------|
+            | Test Date | {test['test_date'].strftime('%Y-%m-%d %H:%M')} |
+            | Operator | {test['operator']} |
+            | Laboratory | {test['laboratory']} |
+            | Certificate No. | {test['certificate']} |
+            | Ambient Temp | {test['ambient_temp']:.1f} °C |
+            """)
+
+    # Thresholds Reference
+    st.divider()
+    with st.expander("IEC 60904-9 Ed.3 Classification Thresholds Reference"):
+        col_a, col_b = st.columns(2)
+
+        with col_a:
+            st.markdown("""
+            **Spectral Match Thresholds** (Ratio Range)
+
+            | Grade | Min Ratio | Max Ratio |
+            |-------|-----------|-----------|
+            | A+ | 0.875 | 1.125 |
+            | A | 0.75 | 1.25 |
+            | B | 0.6 | 1.4 |
+            | C | 0.4 | 2.0 |
+            """)
+
+        with col_b:
+            st.markdown("""
+            **Uniformity & Temporal Stability Thresholds**
+
+            | Grade | Uniformity | STI | LTI |
+            |-------|------------|-----|-----|
+            | A+ | <= 1% | <= 0.5% | <= 1% |
+            | A | <= 2% | <= 2% | <= 2% |
+            | B | <= 5% | <= 5% | <= 5% |
+            | C | <= 10% | <= 10% | <= 10% |
+            """)
 
     # Export button
     st.divider()

@@ -75,25 +75,29 @@ st.markdown("""
 # IEC 60904-9 CONSTANTS AND CLASSIFICATION CRITERIA
 # =============================================================================
 
-# Wavelength intervals per IEC 60904-9 (nm)
+# Wavelength intervals per IEC 60904-9 Ed.3 (nm) - Extended to 300-1200nm
 WAVELENGTH_INTERVALS = [
+    (300, 400),
     (400, 500),
     (500, 600),
     (600, 700),
     (700, 800),
     (800, 900),
-    (900, 1100)
+    (900, 1100),
+    (1100, 1200)
 ]
 
-# AM1.5G Reference spectrum fraction per interval (IEC 60904-9 Table 1)
-# These are the percentage of total irradiance in each wavelength interval
+# AM1.5G Reference spectrum fraction per interval (IEC 60904-9 Ed.3)
+# Extended range from 300-1200nm per ASTM G173-03 reference spectrum
 AM15G_REFERENCE_FRACTIONS = {
-    (400, 500): 0.184,  # 18.4%
-    (500, 600): 0.199,  # 19.9%
-    (600, 700): 0.183,  # 18.3%
-    (700, 800): 0.146,  # 14.6%
-    (800, 900): 0.126,  # 12.6%
-    (900, 1100): 0.162  # 16.2%
+    (300, 400): 0.054,   # 5.4% (UV region)
+    (400, 500): 0.174,   # 17.4%
+    (500, 600): 0.189,   # 18.9%
+    (600, 700): 0.174,   # 17.4%
+    (700, 800): 0.141,   # 14.1%
+    (800, 900): 0.118,   # 11.8%
+    (900, 1100): 0.120,  # 12.0%
+    (1100, 1200): 0.030  # 3.0% (Extended IR)
 }
 
 # Classification thresholds per IEC 60904-9
@@ -157,8 +161,8 @@ def calculate_spectral_classification(spectral_df: pd.DataFrame) -> dict:
     wavelengths = spectral_df['wavelength'].values
     irradiance = spectral_df['irradiance'].values
 
-    # Calculate total irradiance in 400-1100nm range
-    mask_total = (wavelengths >= 400) & (wavelengths <= 1100)
+    # Calculate total irradiance in 300-1200nm range (IEC 60904-9 Ed.3)
+    mask_total = (wavelengths >= 300) & (wavelengths <= 1200)
     total_irradiance = np.trapezoid(irradiance[mask_total], wavelengths[mask_total])
 
     if total_irradiance <= 0:

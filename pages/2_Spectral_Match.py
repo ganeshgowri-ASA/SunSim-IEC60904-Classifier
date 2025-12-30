@@ -51,20 +51,26 @@ st.set_page_config(
     layout="wide",
 )
 
-# IEC 60904-9 Ed.3 Wavelength Bands (6 intervals for SPD method)
+# IEC 60904-9 Ed.3 Wavelength Bands (8 intervals for SPD method, 300-1200nm)
+# Extended spectral range per IEC 60904-9:2020 Edition 3 requirements
+# AM1.5G fractions calculated from ASTM G173-03 reference spectrum
 WAVELENGTH_BANDS = [
-    {"range": "400-500nm", "start": 400, "end": 500, "color": "#8B5CF6", "name": "UV-Violet", "am15g_fraction": 18.4},
-    {"range": "500-600nm", "start": 500, "end": 600, "color": "#22C55E", "name": "Green", "am15g_fraction": 19.9},
-    {"range": "600-700nm", "start": 600, "end": 700, "color": "#EAB308", "name": "Yellow-Orange", "am15g_fraction": 18.4},
-    {"range": "700-800nm", "start": 700, "end": 800, "color": "#F97316", "name": "Red", "am15g_fraction": 14.9},
-    {"range": "800-900nm", "start": 800, "end": 900, "color": "#EF4444", "name": "Near-IR 1", "am15g_fraction": 12.5},
-    {"range": "900-1100nm", "start": 900, "end": 1100, "color": "#991B1B", "name": "Near-IR 2", "am15g_fraction": 15.9},
+    {"range": "300-400nm", "start": 300, "end": 400, "color": "#7C3AED", "name": "UV", "am15g_fraction": 5.4},
+    {"range": "400-500nm", "start": 400, "end": 500, "color": "#8B5CF6", "name": "Violet-Blue", "am15g_fraction": 17.4},
+    {"range": "500-600nm", "start": 500, "end": 600, "color": "#22C55E", "name": "Green", "am15g_fraction": 18.9},
+    {"range": "600-700nm", "start": 600, "end": 700, "color": "#EAB308", "name": "Yellow-Orange", "am15g_fraction": 17.4},
+    {"range": "700-800nm", "start": 700, "end": 800, "color": "#F97316", "name": "Red", "am15g_fraction": 14.1},
+    {"range": "800-900nm", "start": 800, "end": 900, "color": "#EF4444", "name": "Near-IR 1", "am15g_fraction": 11.8},
+    {"range": "900-1100nm", "start": 900, "end": 1100, "color": "#991B1B", "name": "Near-IR 2", "am15g_fraction": 12.0},
+    {"range": "1100-1200nm", "start": 1100, "end": 1200, "color": "#7F1D1D", "name": "Near-IR 3", "am15g_fraction": 3.0},
 ]
 
 # Standard reference cell spectral response (normalized, for SPC method)
-# Typical crystalline silicon cell response
+# Typical crystalline silicon cell response (extended to 300nm)
+# SR values based on typical c-Si cell characteristics with low UV response
 REFERENCE_CELL_SR = {
-    350: 0.05, 400: 0.25, 450: 0.45, 500: 0.62, 550: 0.72,
+    300: 0.00, 320: 0.01, 340: 0.02, 360: 0.04, 380: 0.08,
+    400: 0.25, 450: 0.45, 500: 0.62, 550: 0.72,
     600: 0.78, 650: 0.82, 700: 0.85, 750: 0.87, 800: 0.88,
     850: 0.86, 900: 0.80, 950: 0.65, 1000: 0.45, 1050: 0.25,
     1100: 0.10, 1150: 0.02, 1200: 0.00
@@ -613,7 +619,7 @@ def create_spectrum_comparison_chart(df: pd.DataFrame, method_result: dict) -> g
         xaxis=dict(
             title="Wavelength (nm)",
             gridcolor="#E2E8F0",
-            range=[350, 1200]
+            range=[300, 1200]
         ),
         yaxis=dict(
             title="Spectral Irradiance",
@@ -797,16 +803,19 @@ def create_ratio_histogram(intervals: list) -> go.Figure:
 
 
 def generate_sample_spectral_data() -> pd.DataFrame:
-    """Generate sample spectral data for demonstration"""
+    """Generate sample spectral data for demonstration (300-1200nm range)"""
     np.random.seed(42)
 
-    wavelengths = np.arange(350, 1201, 5)
+    wavelengths = np.arange(300, 1201, 5)
 
-    # Create realistic solar simulator spectrum
+    # Create realistic solar simulator spectrum with extended UV and IR range
     irradiance = []
     for wl in wavelengths:
-        # Base AM1.5G-like shape
-        if wl < 400:
+        # Base AM1.5G-like shape with extended range
+        if wl < 350:
+            # UV region - low but increasing irradiance
+            base = 0.1 + 0.4 * ((wl - 300) / 50)
+        elif wl < 400:
             base = 0.5 + 0.5 * ((wl - 350) / 50)
         elif wl < 550:
             base = 1.0 + 0.5 * ((wl - 400) / 150)
@@ -814,8 +823,11 @@ def generate_sample_spectral_data() -> pd.DataFrame:
             base = 1.5 - 0.3 * ((wl - 550) / 150)
         elif wl < 900:
             base = 1.2 - 0.4 * ((wl - 700) / 200)
+        elif wl < 1100:
+            base = 0.8 - 0.3 * ((wl - 900) / 200)
         else:
-            base = 0.8 - 0.3 * ((wl - 900) / 300)
+            # Extended IR region (1100-1200nm) - lower irradiance
+            base = 0.5 - 0.2 * ((wl - 1100) / 100)
 
         # Add realistic noise and lamp characteristics
         noise = np.random.normal(0, 0.05)
@@ -954,7 +966,7 @@ def main():
 
         st.markdown("---")
         st.markdown("### Wavelength Range")
-        st.markdown("**400-1100nm** (6 intervals)")
+        st.markdown("**300-1200nm** (8 intervals)")
 
     # Data upload section
     st.markdown("### Upload Spectral Data")
@@ -967,7 +979,7 @@ def main():
             <strong>CSV File Format:</strong><br>
             Column 1: Wavelength (nm)<br>
             Column 2: Spectral Irradiance (W/m²/nm or relative units)<br>
-            <em>Headers are auto-detected. Minimum range: 400-1100nm recommended.</em>
+            <em>Headers are auto-detected. Minimum range: 300-1200nm recommended for Ed.3.</em>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1074,8 +1086,8 @@ def main():
                     st.markdown("""
                     <div class="info-box">
                         <strong>SPD Method:</strong> Calculates the ratio of simulator to AM1.5G reference
-                        spectral irradiance fraction in each of 6 wavelength intervals (400-1100nm).
-                        Each ratio must fall within classification thresholds.
+                        spectral irradiance fraction in each of 8 wavelength intervals (300-1200nm).
+                        Each ratio must fall within classification thresholds per IEC 60904-9 Ed.3.
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -1164,9 +1176,10 @@ def main():
                         """, unsafe_allow_html=True)
                     with m4:
                         in_spec = sum(1 for i in spc_results['intervals'] if i['in_spec_aplus'])
+                        total_intervals = len(spc_results['intervals'])
                         st.markdown(f"""
                         <div class="metric-card">
-                            <div class="metric-value">{in_spec}/6</div>
+                            <div class="metric-value">{in_spec}/{total_intervals}</div>
                             <div class="metric-label">Intervals in A+ Spec</div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -1256,7 +1269,7 @@ def main():
                         - Min Ratio: {active_results['min_ratio']:.4f}
                         - Max Ratio: {active_results['max_ratio']:.4f}
                         - Mean Ratio: {active_results['mean_ratio']:.4f}
-                        - Total Intervals: 6
+                        - Total Intervals: {len(active_results['intervals'])}
                         """)
 
             # Tab 5: Save & Export
@@ -1304,7 +1317,7 @@ def main():
                             spectral_mismatch_factor=float(active_results.get('spectral_mismatch_factor', 1.0)),
                             weighted_deviation_pct=float(active_results.get('weighted_deviation_pct', 0)),
                             intervals_data=intervals_json,
-                            wavelength_range="400-1100nm",
+                            wavelength_range="300-1200nm",
                             operator=operator if operator else None,
                             notes=notes if notes else None
                         )
@@ -1377,19 +1390,21 @@ def main():
 
         with st.expander("View Classification Requirements"):
             st.markdown("""
-            **Spectral Match (SPD Method):**
+            **Spectral Match (SPD Method) - IEC 60904-9 Ed.3:**
 
             The spectral match is evaluated by comparing the simulator's spectral irradiance to the
-            AM1.5G reference spectrum (IEC 60904-3) across 6 wavelength intervals:
+            AM1.5G reference spectrum (IEC 60904-3) across 8 wavelength intervals (300-1200nm):
 
             | Wavelength Band | AM1.5G Fraction |
             |-----------------|-----------------|
-            | 400-500 nm | 18.4% |
-            | 500-600 nm | 19.9% |
-            | 600-700 nm | 18.4% |
-            | 700-800 nm | 14.9% |
-            | 800-900 nm | 12.5% |
-            | 900-1100 nm | 15.9% |
+            | 300-400 nm (UV) | 5.4% |
+            | 400-500 nm | 17.4% |
+            | 500-600 nm | 18.9% |
+            | 600-700 nm | 17.4% |
+            | 700-800 nm | 14.1% |
+            | 800-900 nm | 11.8% |
+            | 900-1100 nm | 12.0% |
+            | 1100-1200 nm | 3.0% |
 
             **Classification Thresholds:**
 

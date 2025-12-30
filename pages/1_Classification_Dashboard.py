@@ -3,7 +3,7 @@ IEC 60904-9 Ed.3 Classification Dashboard
 ==========================================
 
 Comprehensive solar simulator classification dashboard with:
-- Spectral Match analysis with 6 wavelength bands (AM1.5G reference)
+- Spectral Match analysis with 8 wavelength bands (AM1.5G reference, 300-1200nm)
 - SPD (Spectral Power Distribution) integrated calculations
 - SPC (Statistical Process Control) analysis
 - Non-Uniformity heatmap with reference cell position marking
@@ -42,14 +42,18 @@ st.set_page_config(
     layout="wide",
 )
 
-# IEC 60904-9 Ed.3 Wavelength Bands (6 intervals per Ed.2/Ed.3 simplified)
+# IEC 60904-9 Ed.3 Wavelength Bands (8 intervals for SPD method, 300-1200nm)
+# Extended spectral range per IEC 60904-9:2020 Edition 3 requirements
+# AM1.5G fractions calculated from ASTM G173-03 reference spectrum
 WAVELENGTH_BANDS = [
-    {"range": "400-500nm", "start": 400, "end": 500, "color": "#8B5CF6", "name": "UV-Violet", "am15g_fraction": 18.4},
-    {"range": "500-600nm", "start": 500, "end": 600, "color": "#22C55E", "name": "Green", "am15g_fraction": 19.9},
-    {"range": "600-700nm", "start": 600, "end": 700, "color": "#EAB308", "name": "Yellow-Orange", "am15g_fraction": 18.4},
-    {"range": "700-800nm", "start": 700, "end": 800, "color": "#F97316", "name": "Red", "am15g_fraction": 14.9},
-    {"range": "800-900nm", "start": 800, "end": 900, "color": "#EF4444", "name": "Near-IR 1", "am15g_fraction": 12.5},
-    {"range": "900-1100nm", "start": 900, "end": 1100, "color": "#991B1B", "name": "Near-IR 2", "am15g_fraction": 15.9},
+    {"range": "300-400nm", "start": 300, "end": 400, "color": "#7C3AED", "name": "UV", "am15g_fraction": 5.4},
+    {"range": "400-500nm", "start": 400, "end": 500, "color": "#8B5CF6", "name": "Violet-Blue", "am15g_fraction": 17.4},
+    {"range": "500-600nm", "start": 500, "end": 600, "color": "#22C55E", "name": "Green", "am15g_fraction": 18.9},
+    {"range": "600-700nm", "start": 600, "end": 700, "color": "#EAB308", "name": "Yellow-Orange", "am15g_fraction": 17.4},
+    {"range": "700-800nm", "start": 700, "end": 800, "color": "#F97316", "name": "Red", "am15g_fraction": 14.1},
+    {"range": "800-900nm", "start": 800, "end": 900, "color": "#EF4444", "name": "Near-IR 1", "am15g_fraction": 11.8},
+    {"range": "900-1100nm", "start": 900, "end": 1100, "color": "#991B1B", "name": "Near-IR 2", "am15g_fraction": 12.0},
+    {"range": "1100-1200nm", "start": 1100, "end": 1200, "color": "#7F1D1D", "name": "Near-IR 3", "am15g_fraction": 3.0},
 ]
 
 # Custom CSS
@@ -287,7 +291,7 @@ def generate_comprehensive_sample_data():
     """Generate comprehensive sample data for all classification parameters"""
     np.random.seed(42)
 
-    # Spectral Match Data - 6 wavelength bands
+    # Spectral Match Data - 8 wavelength bands (300-1200nm)
     spectral_data = []
     for band in WAVELENGTH_BANDS:
         # Simulate measured fraction with slight deviation from reference
@@ -422,7 +426,7 @@ def get_grade_class(grade: ClassificationGrade) -> str:
 
 
 def create_spectral_comparison_chart(spectral_data: list) -> go.Figure:
-    """Create spectral distribution comparison chart with 6 wavelength bands"""
+    """Create spectral distribution comparison chart with 8 wavelength bands (300-1200nm)"""
     fig = go.Figure()
 
     bands = [d["band"] for d in spectral_data]
@@ -1311,7 +1315,7 @@ def main():
         st.markdown("""
         <div class="info-box">
             <strong>IEC 60904-9 Ed.3 Spectral Match:</strong> Comparison of simulator spectrum to AM1.5G
-            reference across 6 wavelength bands (400-1100nm). Each band ratio must fall within classification thresholds.
+            reference across 8 wavelength bands (300-1200nm). Each band ratio must fall within classification thresholds.
         </div>
         """, unsafe_allow_html=True)
 

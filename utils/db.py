@@ -293,6 +293,46 @@ def init_database() -> bool:
                     )
                 """))
 
+            # Simulator selections table for storing selected simulators
+            if is_postgres:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS simulator_selections (
+                        id SERIAL PRIMARY KEY,
+                        simulator_id TEXT UNIQUE NOT NULL,
+                        manufacturer TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        lamp_type TEXT,
+                        classification TEXT,
+                        test_plane_size TEXT,
+                        irradiance_min REAL,
+                        irradiance_max REAL,
+                        illumination_mode TEXT,
+                        is_custom BOOLEAN DEFAULT FALSE,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS simulator_selections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        simulator_id TEXT UNIQUE NOT NULL,
+                        manufacturer TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        lamp_type TEXT,
+                        classification TEXT,
+                        test_plane_size TEXT,
+                        irradiance_min REAL,
+                        irradiance_max REAL,
+                        illumination_mode TEXT,
+                        is_custom INTEGER DEFAULT 0,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+
             conn.commit()
 
         _db_initialized = True
@@ -802,6 +842,216 @@ def get_spectral_match_test_ids() -> list:
     except Exception as e:
         logger.error(f"Failed to get spectral match test IDs: {e}")
         return []
+
+
+# Simulator Selection Functions
+def insert_simulator_selection(
+    simulator_id: str,
+    manufacturer: str,
+    model: str,
+    lamp_type: str,
+    classification: str,
+    test_plane_size: str,
+    irradiance_min: float,
+    irradiance_max: float,
+    illumination_mode: str,
+    is_custom: bool = False,
+    notes: Optional[str] = None
+) -> bool:
+    """
+    Insert or update a simulator selection record.
+
+    Args:
+        simulator_id: Unique identifier for the simulator
+        manufacturer: Manufacturer name
+        model: Model name
+        lamp_type: Type of lamp (Xenon, LED, etc.)
+        classification: IEC 60904-9 classification
+        test_plane_size: Test plane dimensions
+        irradiance_min: Minimum irradiance in W/m²
+        irradiance_max: Maximum irradiance in W/m²
+        illumination_mode: Continuous, Pulsed, or Multi-Flash
+        is_custom: Whether this is a custom simulator
+        notes: Additional notes
+
+    Returns:
+        bool: True if operation succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert simulator selection")
+        return False
+
+    try:
+        engine = get_engine()
+        database_url = get_database_url()
+        is_postgres = not database_url.startswith('sqlite')
+
+        with engine.connect() as conn:
+            # First try to update existing record
+            result = conn.execute(text("""
+                SELECT id FROM simulator_selections WHERE simulator_id = :simulator_id
+            """), {"simulator_id": simulator_id})
+
+            existing = result.fetchone()
+
+            if existing:
+                # Update existing record
+                conn.execute(text("""
+                    UPDATE simulator_selections
+                    SET manufacturer = :manufacturer,
+                        model = :model,
+                        lamp_type = :lamp_type,
+                        classification = :classification,
+                        test_plane_size = :test_plane_size,
+                        irradiance_min = :irradiance_min,
+                        irradiance_max = :irradiance_max,
+                        illumination_mode = :illumination_mode,
+                        is_custom = :is_custom,
+                        notes = :notes,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE simulator_id = :simulator_id
+                """), {
+                    "simulator_id": simulator_id,
+                    "manufacturer": manufacturer,
+                    "model": model,
+                    "lamp_type": lamp_type,
+                    "classification": classification,
+                    "test_plane_size": test_plane_size,
+                    "irradiance_min": irradiance_min,
+                    "irradiance_max": irradiance_max,
+                    "illumination_mode": illumination_mode,
+                    "is_custom": is_custom,
+                    "notes": notes
+                })
+            else:
+                # Insert new record
+                conn.execute(text("""
+                    INSERT INTO simulator_selections
+                    (simulator_id, manufacturer, model, lamp_type, classification,
+                     test_plane_size, irradiance_min, irradiance_max, illumination_mode,
+                     is_custom, notes)
+                    VALUES (:simulator_id, :manufacturer, :model, :lamp_type, :classification,
+                            :test_plane_size, :irradiance_min, :irradiance_max, :illumination_mode,
+                            :is_custom, :notes)
+                """), {
+                    "simulator_id": simulator_id,
+                    "manufacturer": manufacturer,
+                    "model": model,
+                    "lamp_type": lamp_type,
+                    "classification": classification,
+                    "test_plane_size": test_plane_size,
+                    "irradiance_min": irradiance_min,
+                    "irradiance_max": irradiance_max,
+                    "illumination_mode": illumination_mode,
+                    "is_custom": is_custom,
+                    "notes": notes
+                })
+
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert simulator selection: {e}")
+        return False
+
+
+def get_simulator_selections(
+    simulator_id: Optional[str] = None,
+    manufacturer: Optional[str] = None,
+    is_custom: Optional[bool] = None
+) -> pd.DataFrame:
+    """
+    Retrieve simulator selection records with optional filters.
+
+    Args:
+        simulator_id: Filter by specific simulator ID
+        manufacturer: Filter by manufacturer name
+        is_custom: Filter by custom flag
+
+    Returns:
+        DataFrame with simulator selection records
+    """
+    if not ensure_database_ready():
+        logger.warning("Database not ready, returning empty DataFrame")
+        return pd.DataFrame()
+
+    try:
+        engine = get_engine()
+
+        query = "SELECT * FROM simulator_selections WHERE 1=1"
+        params = {}
+
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+        if manufacturer:
+            query += " AND manufacturer = :manufacturer"
+            params["manufacturer"] = manufacturer
+        if is_custom is not None:
+            query += " AND is_custom = :is_custom"
+            params["is_custom"] = is_custom
+
+        query += " ORDER BY updated_at DESC"
+
+        with engine.connect() as conn:
+            df = pd.read_sql_query(text(query), conn, params=params)
+        return df
+    except Exception as e:
+        logger.error(f"Failed to retrieve simulator selections: {e}")
+        return pd.DataFrame()
+
+
+def get_recent_simulator_ids() -> list:
+    """
+    Get list of recently used simulator IDs.
+
+    Returns:
+        List of simulator IDs ordered by most recent use
+    """
+    if not ensure_database_ready():
+        return []
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT simulator_id, manufacturer, model
+                FROM simulator_selections
+                ORDER BY updated_at DESC
+                LIMIT 10
+            """))
+            return [
+                {"id": row[0], "manufacturer": row[1], "model": row[2]}
+                for row in result.fetchall()
+            ]
+    except Exception as e:
+        logger.error(f"Failed to get recent simulator IDs: {e}")
+        return []
+
+
+def delete_simulator_selection(simulator_id: str) -> bool:
+    """
+    Delete a simulator selection record.
+
+    Args:
+        simulator_id: The simulator ID to delete
+
+    Returns:
+        bool: True if deletion succeeded
+    """
+    if not ensure_database_ready():
+        return False
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                DELETE FROM simulator_selections WHERE simulator_id = :simulator_id
+            """), {"simulator_id": simulator_id})
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete simulator selection: {e}")
+        return False
 
 
 # NOTE: Database initialization is now lazy-loaded via ensure_database_ready()

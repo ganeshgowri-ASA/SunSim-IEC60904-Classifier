@@ -42,6 +42,13 @@ from utils.db import (
     get_simulator_ids,
     insert_spectral_match_result,
     get_spectral_match_results,
+    insert_simulator_selection,
+)
+from utils.simulator_ui import (
+    render_simulator_selector,
+    render_simulator_summary_card,
+    get_selected_simulator,
+    get_simulator_id_for_db,
 )
 
 # Page configuration
@@ -927,6 +934,31 @@ def main():
 
     # Sidebar controls
     with st.sidebar:
+        st.markdown("## Equipment Selection")
+        selected_simulator, sim_metadata = render_simulator_selector(
+            key_prefix="spectral",
+            show_specs=True,
+            show_custom_option=True,
+            compact=False
+        )
+
+        # Save selection to database if a simulator is selected
+        if selected_simulator:
+            insert_simulator_selection(
+                simulator_id=sim_metadata.get("simulator_id", ""),
+                manufacturer=selected_simulator.manufacturer_name,
+                model=selected_simulator.model_name,
+                lamp_type=selected_simulator.lamp_type.value,
+                classification=selected_simulator.typical_classification,
+                test_plane_size=selected_simulator.test_plane_size,
+                irradiance_min=selected_simulator.irradiance_range.min_wm2,
+                irradiance_max=selected_simulator.irradiance_range.max_wm2,
+                illumination_mode=selected_simulator.illumination_mode.value,
+                is_custom=sim_metadata.get("is_custom", False),
+                notes=selected_simulator.notes
+            )
+
+        st.markdown("---")
         st.markdown("### Analysis Settings")
 
         analysis_method = st.selectbox(
@@ -938,11 +970,16 @@ def main():
         st.markdown("---")
 
         st.markdown("### Test Information")
-        simulator_id = st.selectbox(
-            "Simulator ID",
-            get_simulator_ids() or ["SIM-001", "SIM-002", "SIM-003"],
-            index=0
-        )
+        # Use simulator ID from selection or fallback to legacy selector
+        if selected_simulator:
+            simulator_id = sim_metadata.get("simulator_id", "")
+            st.info(f"Using: {selected_simulator.full_name}")
+        else:
+            simulator_id = st.selectbox(
+                "Simulator ID",
+                get_simulator_ids() or ["SIM-001", "SIM-002", "SIM-003"],
+                index=0
+            )
 
         operator = st.text_input("Operator", value="")
         notes = st.text_area("Notes", value="", height=80)

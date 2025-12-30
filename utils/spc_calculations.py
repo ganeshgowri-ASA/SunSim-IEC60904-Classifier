@@ -74,6 +74,55 @@ class RunRulesResult:
     severity: str  # 'warning' or 'violation'
 
 
+@dataclass
+class RefModuleControlLimits:
+    """Control limits for reference module monitoring."""
+    cl: float  # Center line (mean)
+    ucl: float  # Upper control limit (3-sigma)
+    lcl: float  # Lower control limit (3-sigma)
+    warning_ucl: float  # Upper warning limit (2-sigma)
+    warning_lcl: float  # Lower warning limit (2-sigma)
+    sigma: float  # Estimated process sigma
+
+
+@dataclass
+class WesternElectricViolation:
+    """Western Electric rule violation for reference module analysis."""
+    rule_number: int
+    rule_name: str
+    description: str
+    violated_points: List[int]
+    severity: str  # 'violation' or 'warning'
+    action: str  # Recommended action
+
+
+@dataclass
+class RefModuleAnalysisResult:
+    """Complete analysis result for reference module SPC monitoring."""
+    values: np.ndarray
+    timestamps: Optional[np.ndarray]
+    flash_numbers: np.ndarray
+    moving_ranges: np.ndarray
+    x_ucl: float
+    x_lcl: float
+    x_cl: float
+    x_sigma: float
+    mr_ucl: float
+    mr_lcl: float
+    mr_cl: float
+    mean: float
+    std_dev: float
+    min_value: float
+    max_value: float
+    ooc_points: List[int]
+    warning_points: List[int]
+    trend_slope: float
+    trend_pvalue: float
+    has_significant_trend: bool
+    drift_detected: bool
+    drift_start_index: Optional[int]
+
+
 def calculate_subgroup_statistics(data: np.ndarray, subgroup_size: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate subgroup means, ranges, and standard deviations.
@@ -550,3 +599,488 @@ def get_capability_rating(cpk: float) -> Tuple[str, str]:
         return "Poor", "#FF6B6B"
     else:
         return "Inadequate", "#FF0000"
+
+
+# Reference Module Monitoring Functions
+def calculate_ref_module_control_limits(
+    values: np.ndarray,
+    nominal_value: Optional[float] = None
+) -> RefModuleControlLimits:
+    """
+    Calculate control limits for reference module I-MR chart.
+
+    Uses individual values and moving range method appropriate for
+    reference module monitoring where each measurement is a single value.
+
+    Args:
+        values: Array of measured values (Isc or Pmax)
+        nominal_value: Expected nominal value (uses mean if None)
+
+    Returns:
+        RefModuleControlLimits with all limit values
+    """
+    n = len(values)
+
+    # Calculate moving range
+    mr = np.abs(np.diff(values))
+    mr_bar = np.mean(mr) if len(mr) > 0 else 0
+
+    # Estimate sigma using d2 = 1.128 for moving range of 2
+    sigma = mr_bar / 1.128 if mr_bar > 0 else np.std(values, ddof=1)
+
+    # Center line
+    cl = nominal_value if nominal_value is not None else np.mean(values)
+
+    # 3-sigma control limits
+    ucl = cl + 3 * sigma
+    lcl = cl - 3 * sigma
+
+    # 2-sigma warning limits
+    warning_ucl = cl + 2 * sigma
+    warning_lcl = cl - 2 * sigma
+
+    return RefModuleControlLimits(
+        cl=cl,
+        ucl=ucl,
+        lcl=lcl,
+        warning_ucl=warning_ucl,
+        warning_lcl=warning_lcl,
+        sigma=sigma
+    )
+
+
+def detect_western_electric_rules(
+    data: np.ndarray,
+    cl: float,
+    ucl: float,
+    lcl: float
+) -> List[WesternElectricViolation]:
+    """
+    Detect Western Electric rules violations for reference module monitoring.
+
+    Implements 8 standard Western Electric rules with specific actions
+    relevant to flasher/reference module anomaly detection.
+
+    Args:
+        data: Individual measurement values
+        cl: Center line
+        ucl: Upper control limit (3-sigma)
+        lcl: Lower control limit (3-sigma)
+
+    Returns:
+        List of WesternElectricViolation for each violated rule
+    """
+    violations = []
+    n = len(data)
+
+    sigma = (ucl - cl) / 3
+    one_sigma_above = cl + sigma
+    one_sigma_below = cl - sigma
+    two_sigma_above = cl + 2 * sigma
+    two_sigma_below = cl - 2 * sigma
+
+    # Rule 1: Point beyond 3-sigma (outside control limits)
+    rule1_violations = []
+    for i, value in enumerate(data):
+        if value > ucl or value < lcl:
+            rule1_violations.append(i)
+    if rule1_violations:
+        violations.append(WesternElectricViolation(
+            rule_number=1,
+            rule_name="Beyond 3σ",
+            description="Point(s) beyond control limits - likely flasher malfunction or severe degradation",
+            violated_points=rule1_violations,
+            severity="violation",
+            action="STOP: Immediately investigate flasher and reference module. Check for lamp issues, contact problems, or module damage."
+        ))
+
+    # Rule 2: 8 consecutive points on same side of center line
+    if n >= 8:
+        rule2_violations = []
+        for i in range(n - 7):
+            window = data[i:i + 8]
+            if all(v > cl for v in window) or all(v < cl for v in window):
+                rule2_violations.extend(range(i, i + 8))
+        if rule2_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=2,
+                rule_name="8 Points Same Side",
+                description="8 consecutive points above or below center line - systematic shift detected",
+                violated_points=list(set(rule2_violations)),
+                severity="violation",
+                action="Recalibrate the flasher. Check for environmental changes (temperature, ventilation). Review reference module condition."
+            ))
+
+    # Rule 3: 6 consecutive points increasing or decreasing (trend)
+    if n >= 6:
+        rule3_violations = []
+        for i in range(n - 5):
+            window = data[i:i + 6]
+            increasing = all(window[j] < window[j + 1] for j in range(5))
+            decreasing = all(window[j] > window[j + 1] for j in range(5))
+            if increasing or decreasing:
+                rule3_violations.extend(range(i, i + 6))
+        if rule3_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=3,
+                rule_name="6 Points Trending",
+                description="6 consecutive points steadily increasing or decreasing - gradual drift detected",
+                violated_points=list(set(rule3_violations)),
+                severity="warning",
+                action="Monitor closely. Check flasher lamp aging, reference module degradation, or temperature drift."
+            ))
+
+    # Rule 4: 14 consecutive points alternating up and down
+    if n >= 14:
+        rule4_violations = []
+        for i in range(n - 13):
+            window = data[i:i + 14]
+            alternating = True
+            for j in range(12):
+                if j % 2 == 0:
+                    if window[j] >= window[j + 1]:
+                        alternating = False
+                        break
+                else:
+                    if window[j] <= window[j + 1]:
+                        alternating = False
+                        break
+            if alternating:
+                rule4_violations.extend(range(i, i + 14))
+        if rule4_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=4,
+                rule_name="14 Points Alternating",
+                description="14 consecutive points alternating up and down - over-adjustment or control system oscillation",
+                violated_points=list(set(rule4_violations)),
+                severity="warning",
+                action="Check for over-correction in control systems. Review operator procedures."
+            ))
+
+    # Rule 5: 2 out of 3 points beyond 2-sigma (same side)
+    if n >= 3:
+        rule5_violations = []
+        for i in range(n - 2):
+            window = data[i:i + 3]
+            above_2sigma = sum(1 for v in window if v > two_sigma_above)
+            below_2sigma = sum(1 for v in window if v < two_sigma_below)
+            if above_2sigma >= 2 or below_2sigma >= 2:
+                rule5_violations.extend(range(i, i + 3))
+        if rule5_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=5,
+                rule_name="2 of 3 Beyond 2σ",
+                description="2 out of 3 consecutive points beyond 2 sigma - process shift starting",
+                violated_points=list(set(rule5_violations)),
+                severity="warning",
+                action="Increased monitoring required. Prepare for potential calibration adjustment."
+            ))
+
+    # Rule 6: 4 out of 5 points beyond 1-sigma (same side)
+    if n >= 5:
+        rule6_violations = []
+        for i in range(n - 4):
+            window = data[i:i + 5]
+            above_1sigma = sum(1 for v in window if v > one_sigma_above)
+            below_1sigma = sum(1 for v in window if v < one_sigma_below)
+            if above_1sigma >= 4 or below_1sigma >= 4:
+                rule6_violations.extend(range(i, i + 5))
+        if rule6_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=6,
+                rule_name="4 of 5 Beyond 1σ",
+                description="4 out of 5 consecutive points beyond 1 sigma - process shift approaching",
+                violated_points=list(set(rule6_violations)),
+                severity="warning",
+                action="Schedule preventive calibration check within next 5-10 flashes."
+            ))
+
+    # Rule 7: 15 consecutive points within 1-sigma (stratification)
+    if n >= 15:
+        rule7_violations = []
+        for i in range(n - 14):
+            window = data[i:i + 15]
+            within_1sigma = all(one_sigma_below <= v <= one_sigma_above for v in window)
+            if within_1sigma:
+                rule7_violations.extend(range(i, i + 15))
+        if rule7_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=7,
+                rule_name="15 Points Within 1σ",
+                description="15 consecutive points within 1 sigma - unusually low variation (stratification)",
+                violated_points=list(set(rule7_violations)),
+                severity="warning",
+                action="Verify measurement system resolution. Check for averaged data or improper sampling."
+            ))
+
+    # Rule 8: 8 consecutive points beyond 1-sigma on either side (mixture)
+    if n >= 8:
+        rule8_violations = []
+        for i in range(n - 7):
+            window = data[i:i + 8]
+            beyond_1sigma = all(v < one_sigma_below or v > one_sigma_above for v in window)
+            if beyond_1sigma:
+                rule8_violations.extend(range(i, i + 8))
+        if rule8_violations:
+            violations.append(WesternElectricViolation(
+                rule_number=8,
+                rule_name="8 Points Beyond 1σ",
+                description="8 consecutive points beyond 1 sigma on either side - bimodal distribution (mixture)",
+                violated_points=list(set(rule8_violations)),
+                severity="warning",
+                action="Investigate for multiple sources of variation. Check if multiple flashers or reference modules in use."
+            ))
+
+    return violations
+
+
+def analyze_ref_module_data(
+    values: np.ndarray,
+    flash_numbers: Optional[np.ndarray] = None,
+    timestamps: Optional[np.ndarray] = None,
+    historical_baseline: Optional[np.ndarray] = None,
+    nominal_value: Optional[float] = None
+) -> RefModuleAnalysisResult:
+    """
+    Perform comprehensive SPC analysis on reference module data.
+
+    Args:
+        values: Measured values (Isc or Pmax)
+        flash_numbers: Flash sequence numbers (if None, uses indices)
+        timestamps: Measurement timestamps (optional)
+        historical_baseline: Historical data for establishing control limits (if None, uses values)
+        nominal_value: Expected nominal value for centering
+
+    Returns:
+        RefModuleAnalysisResult with full analysis
+    """
+    n = len(values)
+
+    if flash_numbers is None:
+        flash_numbers = np.arange(1, n + 1)
+
+    # Calculate moving ranges
+    mr = np.abs(np.diff(values))
+    mr_bar = np.mean(mr) if len(mr) > 0 else 0
+
+    # Use historical baseline or current data for control limits
+    baseline = historical_baseline if historical_baseline is not None else values
+    limits = calculate_ref_module_control_limits(baseline, nominal_value)
+
+    # Individual chart values
+    x_cl = limits.cl
+    x_ucl = limits.ucl
+    x_lcl = limits.lcl
+    x_sigma = limits.sigma
+
+    # Moving range chart limits (using D4 = 3.267 for n=2)
+    mr_cl = mr_bar
+    mr_ucl = 3.267 * mr_bar
+    mr_lcl = 0
+
+    # Identify out-of-control and warning points
+    ooc_points = []
+    warning_points = []
+    for i, v in enumerate(values):
+        if v > x_ucl or v < x_lcl:
+            ooc_points.append(i)
+        elif v > limits.warning_ucl or v < limits.warning_lcl:
+            warning_points.append(i)
+
+    # Trend analysis using linear regression
+    slope, intercept, r_value, p_value, std_err = stats.linregress(
+        np.arange(n), values
+    )
+    has_significant_trend = p_value < 0.05 and abs(slope) > x_sigma * 0.1
+
+    # Drift detection using CUSUM-like approach
+    drift_detected = False
+    drift_start_index = None
+    if n >= 10:
+        # Calculate cumulative sum of deviations from center line
+        cusum = np.cumsum(values - x_cl)
+        cusum_threshold = 4 * x_sigma * np.sqrt(n)
+
+        for i in range(n):
+            if abs(cusum[i]) > cusum_threshold:
+                drift_detected = True
+                drift_start_index = i
+                break
+
+    return RefModuleAnalysisResult(
+        values=values,
+        timestamps=timestamps,
+        flash_numbers=flash_numbers,
+        moving_ranges=mr,
+        x_ucl=x_ucl,
+        x_lcl=x_lcl,
+        x_cl=x_cl,
+        x_sigma=x_sigma,
+        mr_ucl=mr_ucl,
+        mr_lcl=mr_lcl,
+        mr_cl=mr_cl,
+        mean=np.mean(values),
+        std_dev=np.std(values, ddof=1) if n > 1 else 0,
+        min_value=np.min(values),
+        max_value=np.max(values),
+        ooc_points=ooc_points,
+        warning_points=warning_points,
+        trend_slope=slope,
+        trend_pvalue=p_value,
+        has_significant_trend=has_significant_trend,
+        drift_detected=drift_detected,
+        drift_start_index=drift_start_index
+    )
+
+
+def generate_ref_module_sample_data(
+    n_flashes: int = 100,
+    nominal_isc: float = 8.5,
+    nominal_pmax: float = 320.0,
+    isc_std: float = 0.02,
+    pmax_std: float = 1.0,
+    include_drift: bool = False,
+    drift_start: int = 70,
+    drift_rate: float = 0.001,
+    include_anomalies: bool = False,
+    anomaly_positions: Optional[List[int]] = None,
+    seed: Optional[int] = None
+) -> pd.DataFrame:
+    """
+    Generate simulated reference module data for testing.
+
+    Args:
+        n_flashes: Number of flash measurements
+        nominal_isc: Nominal short-circuit current (A)
+        nominal_pmax: Nominal maximum power (W)
+        isc_std: Standard deviation of Isc measurements
+        pmax_std: Standard deviation of Pmax measurements
+        include_drift: Whether to include gradual drift
+        drift_start: Flash number where drift begins
+        drift_rate: Rate of drift per flash
+        include_anomalies: Whether to include anomalous points
+        anomaly_positions: Specific positions for anomalies
+        seed: Random seed for reproducibility
+
+    Returns:
+        DataFrame with columns: flash_number, timestamp, isc, pmax
+    """
+    if seed is not None:
+        np.random.seed(seed)
+
+    flash_numbers = np.arange(1, n_flashes + 1)
+
+    # Generate base measurements with random variation
+    isc_values = np.random.normal(nominal_isc, isc_std, n_flashes)
+    pmax_values = np.random.normal(nominal_pmax, pmax_std, n_flashes)
+
+    # Add drift if requested
+    if include_drift:
+        drift_indices = np.arange(n_flashes) - drift_start
+        drift_indices = np.maximum(drift_indices, 0)
+        isc_drift = -drift_rate * drift_indices  # Degradation (decreasing Isc)
+        pmax_drift = -drift_rate * 100 * drift_indices  # Proportional Pmax decrease
+        isc_values += isc_drift
+        pmax_values += pmax_drift
+
+    # Add anomalies if requested
+    if include_anomalies:
+        if anomaly_positions is None:
+            anomaly_positions = np.random.choice(n_flashes, size=3, replace=False)
+
+        for pos in anomaly_positions:
+            if pos < n_flashes:
+                isc_values[pos] += np.random.choice([-1, 1]) * 4 * isc_std
+                pmax_values[pos] += np.random.choice([-1, 1]) * 4 * pmax_std
+
+    # Generate timestamps
+    from datetime import datetime, timedelta
+    start_time = datetime.now() - timedelta(days=30)
+    timestamps = [start_time + timedelta(hours=i*8) for i in range(n_flashes)]
+
+    return pd.DataFrame({
+        'flash_number': flash_numbers,
+        'timestamp': timestamps,
+        'isc': np.round(isc_values, 4),
+        'pmax': np.round(pmax_values, 2)
+    })
+
+
+def get_point_status(
+    value: float,
+    ucl: float,
+    lcl: float,
+    warning_ucl: float,
+    warning_lcl: float
+) -> Tuple[str, str]:
+    """
+    Get status and color for a data point.
+
+    Args:
+        value: Measured value
+        ucl: Upper control limit
+        lcl: Lower control limit
+        warning_ucl: Upper warning limit (2-sigma)
+        warning_lcl: Lower warning limit (2-sigma)
+
+    Returns:
+        Tuple of (status, color)
+    """
+    if value > ucl or value < lcl:
+        return "Out of Control", "#FF6B6B"
+    elif value > warning_ucl or value < warning_lcl:
+        return "Warning", "#FFE66D"
+    else:
+        return "Normal", "#00D4AA"
+
+
+def calculate_ref_module_cpk(
+    values: np.ndarray,
+    usl: float,
+    lsl: float,
+    target: Optional[float] = None
+) -> Dict:
+    """
+    Calculate process capability indices for reference module monitoring.
+
+    Args:
+        values: Measured values
+        usl: Upper specification limit
+        lsl: Lower specification limit
+        target: Target value (defaults to midpoint)
+
+    Returns:
+        Dictionary with Cp, Cpk, and related statistics
+    """
+    if target is None:
+        target = (usl + lsl) / 2
+
+    mean = np.mean(values)
+    std = np.std(values, ddof=1)
+
+    spec_range = usl - lsl
+
+    # Cp - Process potential
+    cp = spec_range / (6 * std) if std > 0 else 0
+
+    # Cpk - Process capability
+    cpu = (usl - mean) / (3 * std) if std > 0 else 0
+    cpl = (mean - lsl) / (3 * std) if std > 0 else 0
+    cpk = min(cpu, cpl)
+
+    # Cpm - Taguchi capability (accounts for deviation from target)
+    variance_from_target = np.mean((values - target) ** 2)
+    cpm = spec_range / (6 * np.sqrt(variance_from_target)) if variance_from_target > 0 else 0
+
+    return {
+        'cp': cp,
+        'cpk': cpk,
+        'cpm': cpm,
+        'cpu': cpu,
+        'cpl': cpl,
+        'mean': mean,
+        'std_dev': std,
+        'usl': usl,
+        'lsl': lsl,
+        'target': target
+    }

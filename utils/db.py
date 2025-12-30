@@ -333,6 +333,40 @@ def init_database() -> bool:
                     )
                 """))
 
+            # Reference module monitoring data table (from PR #11)
+            if is_postgres:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ref_module_data (
+                        id SERIAL PRIMARY KEY,
+                        ref_module_id TEXT NOT NULL,
+                        simulator_id TEXT NOT NULL,
+                        flash_number INTEGER NOT NULL,
+                        measurement_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        isc REAL NOT NULL,
+                        pmax REAL,
+                        temperature REAL,
+                        irradiance REAL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ref_module_data (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ref_module_id TEXT NOT NULL,
+                        simulator_id TEXT NOT NULL,
+                        flash_number INTEGER NOT NULL,
+                        measurement_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        isc REAL NOT NULL,
+                        pmax REAL,
+                        temperature REAL,
+                        irradiance REAL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+
             conn.commit()
 
         _db_initialized = True
@@ -1051,6 +1085,209 @@ def delete_simulator_selection(simulator_id: str) -> bool:
         return True
     except Exception as e:
         logger.error(f"Failed to delete simulator selection: {e}")
+        return False
+
+
+# Reference Module Monitoring Functions
+def insert_ref_module_measurement(
+    ref_module_id: str,
+    simulator_id: str,
+    flash_number: int,
+    isc: float,
+    pmax: Optional[float] = None,
+    temperature: Optional[float] = None,
+    irradiance: Optional[float] = None,
+    measurement_time: Optional[datetime] = None,
+    notes: Optional[str] = None
+) -> bool:
+    """
+    Insert a single reference module measurement.
+
+    Args:
+        ref_module_id: Reference module identifier
+        simulator_id: Simulator/flasher identifier
+        flash_number: Flash sequence number
+        isc: Short-circuit current (A)
+        pmax: Maximum power (W), optional
+        temperature: Module temperature (C), optional
+        irradiance: Measured irradiance (W/m2), optional
+        measurement_time: Timestamp of measurement
+        notes: Additional notes
+
+    Returns:
+        bool: True if insert succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert reference module measurement")
+        return False
+
+    try:
+        engine = get_engine()
+
+        if measurement_time is None:
+            measurement_time = datetime.now()
+
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ref_module_data
+                (ref_module_id, simulator_id, flash_number, measurement_time,
+                 isc, pmax, temperature, irradiance, notes)
+                VALUES (:ref_module_id, :simulator_id, :flash_number, :measurement_time,
+                        :isc, :pmax, :temperature, :irradiance, :notes)
+            """), {
+                "ref_module_id": ref_module_id,
+                "simulator_id": simulator_id,
+                "flash_number": flash_number,
+                "measurement_time": measurement_time,
+                "isc": isc,
+                "pmax": pmax,
+                "temperature": temperature,
+                "irradiance": irradiance,
+                "notes": notes
+            })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert reference module measurement: {e}")
+        return False
+
+
+def insert_ref_module_batch(df: pd.DataFrame, ref_module_id: str, simulator_id: str) -> bool:
+    """
+    Insert batch of reference module measurements from DataFrame.
+
+    Args:
+        df: DataFrame with columns: flash_number, isc, and optionally pmax, timestamp, temperature, irradiance
+        ref_module_id: Reference module identifier
+        simulator_id: Simulator identifier
+
+    Returns:
+        bool: True if insert succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert reference module batch")
+        return False
+
+    try:
+        engine = get_engine()
+        measurement_time = datetime.now()
+
+        with engine.connect() as conn:
+            for _, row in df.iterrows():
+                conn.execute(text("""
+                    INSERT INTO ref_module_data
+                    (ref_module_id, simulator_id, flash_number, measurement_time,
+                     isc, pmax, temperature, irradiance, notes)
+                    VALUES (:ref_module_id, :simulator_id, :flash_number, :measurement_time,
+                            :isc, :pmax, :temperature, :irradiance, :notes)
+                """), {
+                    "ref_module_id": ref_module_id,
+                    "simulator_id": simulator_id,
+                    "flash_number": row.get('flash_number', row.name + 1),
+                    "measurement_time": row.get('timestamp', row.get('measurement_time', measurement_time)),
+                    "isc": row['isc'],
+                    "pmax": row.get('pmax'),
+                    "temperature": row.get('temperature'),
+                    "irradiance": row.get('irradiance'),
+                    "notes": row.get('notes')
+                })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert reference module batch: {e}")
+        return False
+
+
+def get_ref_module_data(
+    ref_module_id: Optional[str] = None,
+    simulator_id: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> pd.DataFrame:
+    """
+    Retrieve reference module measurement data with optional filters.
+
+    Returns:
+        DataFrame with reference module measurements
+    """
+    if not ensure_database_ready():
+        logger.warning("Database not ready, returning empty DataFrame")
+        return pd.DataFrame()
+
+    try:
+        engine = get_engine()
+
+        query = "SELECT * FROM ref_module_data WHERE 1=1"
+        params = {}
+
+        if ref_module_id:
+            query += " AND ref_module_id = :ref_module_id"
+            params["ref_module_id"] = ref_module_id
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+        if start_date:
+            query += " AND measurement_time >= :start_date"
+            params["start_date"] = start_date
+        if end_date:
+            query += " AND measurement_time <= :end_date"
+            params["end_date"] = end_date
+
+        query += " ORDER BY flash_number"
+
+        with engine.connect() as conn:
+            df = pd.read_sql_query(text(query), conn, params=params)
+        return df
+    except Exception as e:
+        logger.error(f"Failed to retrieve reference module data: {e}")
+        return pd.DataFrame()
+
+
+def get_ref_module_ids() -> list:
+    """Get list of unique reference module IDs."""
+    if not ensure_database_ready():
+        return ["REF-001", "REF-002"]
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT DISTINCT ref_module_id FROM ref_module_data ORDER BY ref_module_id"
+            ))
+            ids = [row[0] for row in result.fetchall()]
+        return ids if ids else ["REF-001", "REF-002"]
+    except Exception as e:
+        logger.error(f"Failed to get reference module IDs: {e}")
+        return ["REF-001", "REF-002"]
+
+
+def clear_ref_module_data(
+    ref_module_id: Optional[str] = None,
+    simulator_id: Optional[str] = None
+) -> bool:
+    """Clear reference module data with optional filters."""
+    if not ensure_database_ready():
+        return False
+
+    try:
+        engine = get_engine()
+
+        query = "DELETE FROM ref_module_data WHERE 1=1"
+        params = {}
+
+        if ref_module_id:
+            query += " AND ref_module_id = :ref_module_id"
+            params["ref_module_id"] = ref_module_id
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+
+        with engine.connect() as conn:
+            conn.execute(text(query), params)
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear reference module data: {e}")
         return False
 
 

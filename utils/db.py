@@ -293,6 +293,80 @@ def init_database() -> bool:
                     )
                 """))
 
+            # Reference module monitoring data table
+            if is_postgres:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ref_module_data (
+                        id SERIAL PRIMARY KEY,
+                        ref_module_id TEXT NOT NULL,
+                        simulator_id TEXT NOT NULL,
+                        flash_number INTEGER NOT NULL,
+                        measurement_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        isc REAL NOT NULL,
+                        pmax REAL,
+                        temperature REAL,
+                        irradiance REAL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS ref_module_data (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ref_module_id TEXT NOT NULL,
+                        simulator_id TEXT NOT NULL,
+                        flash_number INTEGER NOT NULL,
+                        measurement_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        isc REAL NOT NULL,
+                        pmax REAL,
+                        temperature REAL,
+                        irradiance REAL,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+
+            # Simulator selections table for storing selected simulators
+            if is_postgres:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS simulator_selections (
+                        id SERIAL PRIMARY KEY,
+                        simulator_id TEXT UNIQUE NOT NULL,
+                        manufacturer TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        lamp_type TEXT,
+                        classification TEXT,
+                        test_plane_size TEXT,
+                        irradiance_min REAL,
+                        irradiance_max REAL,
+                        illumination_mode TEXT,
+                        is_custom BOOLEAN DEFAULT FALSE,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS simulator_selections (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        simulator_id TEXT UNIQUE NOT NULL,
+                        manufacturer TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        lamp_type TEXT,
+                        classification TEXT,
+                        test_plane_size TEXT,
+                        irradiance_min REAL,
+                        irradiance_max REAL,
+                        illumination_mode TEXT,
+                        is_custom INTEGER DEFAULT 0,
+                        notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+
             conn.commit()
 
         _db_initialized = True
@@ -802,6 +876,419 @@ def get_spectral_match_test_ids() -> list:
     except Exception as e:
         logger.error(f"Failed to get spectral match test IDs: {e}")
         return []
+
+
+# Reference Module Monitoring Functions
+def insert_ref_module_measurement(
+    ref_module_id: str,
+    simulator_id: str,
+    flash_number: int,
+    isc: float,
+    pmax: Optional[float] = None,
+    temperature: Optional[float] = None,
+    irradiance: Optional[float] = None,
+    measurement_time: Optional[datetime] = None,
+    notes: Optional[str] = None
+) -> bool:
+    """
+    Insert a single reference module measurement.
+
+    Args:
+        ref_module_id: Reference module identifier
+        simulator_id: Simulator/flasher identifier
+        flash_number: Flash sequence number
+        isc: Short-circuit current (A)
+        pmax: Maximum power (W), optional
+        temperature: Module temperature (C), optional
+        irradiance: Measured irradiance (W/m2), optional
+        measurement_time: Timestamp of measurement
+        notes: Additional notes
+
+    Returns:
+        bool: True if insert succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert reference module measurement")
+        return False
+
+    try:
+        engine = get_engine()
+
+        if measurement_time is None:
+            measurement_time = datetime.now()
+
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO ref_module_data
+                (ref_module_id, simulator_id, flash_number, measurement_time,
+                 isc, pmax, temperature, irradiance, notes)
+                VALUES (:ref_module_id, :simulator_id, :flash_number, :measurement_time,
+                        :isc, :pmax, :temperature, :irradiance, :notes)
+            """), {
+                "ref_module_id": ref_module_id,
+                "simulator_id": simulator_id,
+                "flash_number": flash_number,
+                "measurement_time": measurement_time,
+                "isc": isc,
+                "pmax": pmax,
+                "temperature": temperature,
+                "irradiance": irradiance,
+                "notes": notes
+            })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert reference module measurement: {e}")
+        return False
+
+
+def insert_ref_module_batch(df: pd.DataFrame, ref_module_id: str, simulator_id: str) -> bool:
+    """
+    Insert batch of reference module measurements from DataFrame.
+
+    Args:
+        df: DataFrame with columns: flash_number, isc, and optionally pmax, timestamp, temperature, irradiance
+        ref_module_id: Reference module identifier
+        simulator_id: Simulator identifier
+
+    Returns:
+        bool: True if insert succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert reference module batch")
+        return False
+
+    try:
+        engine = get_engine()
+        measurement_time = datetime.now()
+
+        with engine.connect() as conn:
+            for _, row in df.iterrows():
+                conn.execute(text("""
+                    INSERT INTO ref_module_data
+                    (ref_module_id, simulator_id, flash_number, measurement_time,
+                     isc, pmax, temperature, irradiance, notes)
+                    VALUES (:ref_module_id, :simulator_id, :flash_number, :measurement_time,
+                            :isc, :pmax, :temperature, :irradiance, :notes)
+                """), {
+                    "ref_module_id": ref_module_id,
+                    "simulator_id": simulator_id,
+                    "flash_number": row.get('flash_number', row.name + 1),
+                    "measurement_time": row.get('timestamp', row.get('measurement_time', measurement_time)),
+                    "isc": row['isc'],
+                    "pmax": row.get('pmax'),
+                    "temperature": row.get('temperature'),
+                    "irradiance": row.get('irradiance'),
+                    "notes": row.get('notes')
+                })
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert reference module batch: {e}")
+        return False
+
+
+def get_ref_module_data(
+    ref_module_id: Optional[str] = None,
+    simulator_id: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> pd.DataFrame:
+    """
+    Retrieve reference module measurement data with optional filters.
+
+    Returns:
+        DataFrame with reference module measurements
+    """
+    if not ensure_database_ready():
+        logger.warning("Database not ready, returning empty DataFrame")
+        return pd.DataFrame()
+
+    try:
+        engine = get_engine()
+
+        query = "SELECT * FROM ref_module_data WHERE 1=1"
+        params = {}
+
+        if ref_module_id:
+            query += " AND ref_module_id = :ref_module_id"
+            params["ref_module_id"] = ref_module_id
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+        if start_date:
+            query += " AND measurement_time >= :start_date"
+            params["start_date"] = start_date
+        if end_date:
+            query += " AND measurement_time <= :end_date"
+            params["end_date"] = end_date
+
+        query += " ORDER BY flash_number"
+
+        with engine.connect() as conn:
+            df = pd.read_sql_query(text(query), conn, params=params)
+        return df
+    except Exception as e:
+        logger.error(f"Failed to retrieve reference module data: {e}")
+        return pd.DataFrame()
+
+
+def get_ref_module_ids() -> list:
+    """Get list of unique reference module IDs."""
+    if not ensure_database_ready():
+        return ["REF-001", "REF-002"]
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text(
+                "SELECT DISTINCT ref_module_id FROM ref_module_data ORDER BY ref_module_id"
+            ))
+            ids = [row[0] for row in result.fetchall()]
+        return ids if ids else ["REF-001", "REF-002"]
+    except Exception as e:
+        logger.error(f"Failed to get reference module IDs: {e}")
+        return ["REF-001", "REF-002"]
+
+
+def clear_ref_module_data(
+    ref_module_id: Optional[str] = None,
+    simulator_id: Optional[str] = None
+) -> bool:
+    """Clear reference module data with optional filters."""
+    if not ensure_database_ready():
+        return False
+
+    try:
+        engine = get_engine()
+
+        query = "DELETE FROM ref_module_data WHERE 1=1"
+        params = {}
+
+        if ref_module_id:
+            query += " AND ref_module_id = :ref_module_id"
+            params["ref_module_id"] = ref_module_id
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+
+        with engine.connect() as conn:
+            conn.execute(text(query), params)
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear reference module data: {e}")
+        return False
+
+
+# Simulator Selection Functions
+def insert_simulator_selection(
+    simulator_id: str,
+    manufacturer: str,
+    model: str,
+    lamp_type: str,
+    classification: str,
+    test_plane_size: str,
+    irradiance_min: float,
+    irradiance_max: float,
+    illumination_mode: str,
+    is_custom: bool = False,
+    notes: Optional[str] = None
+) -> bool:
+    """
+    Insert or update a simulator selection record.
+
+    Args:
+        simulator_id: Unique identifier for the simulator
+        manufacturer: Manufacturer name
+        model: Model name
+        lamp_type: Type of lamp (Xenon, LED, etc.)
+        classification: IEC 60904-9 classification
+        test_plane_size: Test plane dimensions
+        irradiance_min: Minimum irradiance in W/m²
+        irradiance_max: Maximum irradiance in W/m²
+        illumination_mode: Continuous, Pulsed, or Multi-Flash
+        is_custom: Whether this is a custom simulator
+        notes: Additional notes
+
+    Returns:
+        bool: True if operation succeeded
+    """
+    if not ensure_database_ready():
+        logger.error("Database not ready, cannot insert simulator selection")
+        return False
+
+    try:
+        engine = get_engine()
+        database_url = get_database_url()
+        is_postgres = not database_url.startswith('sqlite')
+
+        with engine.connect() as conn:
+            # First try to update existing record
+            result = conn.execute(text("""
+                SELECT id FROM simulator_selections WHERE simulator_id = :simulator_id
+            """), {"simulator_id": simulator_id})
+
+            existing = result.fetchone()
+
+            if existing:
+                # Update existing record
+                conn.execute(text("""
+                    UPDATE simulator_selections
+                    SET manufacturer = :manufacturer,
+                        model = :model,
+                        lamp_type = :lamp_type,
+                        classification = :classification,
+                        test_plane_size = :test_plane_size,
+                        irradiance_min = :irradiance_min,
+                        irradiance_max = :irradiance_max,
+                        illumination_mode = :illumination_mode,
+                        is_custom = :is_custom,
+                        notes = :notes,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE simulator_id = :simulator_id
+                """), {
+                    "simulator_id": simulator_id,
+                    "manufacturer": manufacturer,
+                    "model": model,
+                    "lamp_type": lamp_type,
+                    "classification": classification,
+                    "test_plane_size": test_plane_size,
+                    "irradiance_min": irradiance_min,
+                    "irradiance_max": irradiance_max,
+                    "illumination_mode": illumination_mode,
+                    "is_custom": is_custom,
+                    "notes": notes
+                })
+            else:
+                # Insert new record
+                conn.execute(text("""
+                    INSERT INTO simulator_selections
+                    (simulator_id, manufacturer, model, lamp_type, classification,
+                     test_plane_size, irradiance_min, irradiance_max, illumination_mode,
+                     is_custom, notes)
+                    VALUES (:simulator_id, :manufacturer, :model, :lamp_type, :classification,
+                            :test_plane_size, :irradiance_min, :irradiance_max, :illumination_mode,
+                            :is_custom, :notes)
+                """), {
+                    "simulator_id": simulator_id,
+                    "manufacturer": manufacturer,
+                    "model": model,
+                    "lamp_type": lamp_type,
+                    "classification": classification,
+                    "test_plane_size": test_plane_size,
+                    "irradiance_min": irradiance_min,
+                    "irradiance_max": irradiance_max,
+                    "illumination_mode": illumination_mode,
+                    "is_custom": is_custom,
+                    "notes": notes
+                })
+
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to insert simulator selection: {e}")
+        return False
+
+
+def get_simulator_selections(
+    simulator_id: Optional[str] = None,
+    manufacturer: Optional[str] = None,
+    is_custom: Optional[bool] = None
+) -> pd.DataFrame:
+    """
+    Retrieve simulator selection records with optional filters.
+
+    Args:
+        simulator_id: Filter by specific simulator ID
+        manufacturer: Filter by manufacturer name
+        is_custom: Filter by custom flag
+
+    Returns:
+        DataFrame with simulator selection records
+    """
+    if not ensure_database_ready():
+        logger.warning("Database not ready, returning empty DataFrame")
+        return pd.DataFrame()
+
+    try:
+        engine = get_engine()
+
+        query = "SELECT * FROM simulator_selections WHERE 1=1"
+        params = {}
+
+        if simulator_id:
+            query += " AND simulator_id = :simulator_id"
+            params["simulator_id"] = simulator_id
+        if manufacturer:
+            query += " AND manufacturer = :manufacturer"
+            params["manufacturer"] = manufacturer
+        if is_custom is not None:
+            query += " AND is_custom = :is_custom"
+            params["is_custom"] = is_custom
+
+        query += " ORDER BY updated_at DESC"
+
+        with engine.connect() as conn:
+            df = pd.read_sql_query(text(query), conn, params=params)
+        return df
+    except Exception as e:
+        logger.error(f"Failed to retrieve simulator selections: {e}")
+        return pd.DataFrame()
+
+
+def get_recent_simulator_ids() -> list:
+    """
+    Get list of recently used simulator IDs.
+
+    Returns:
+        List of simulator IDs ordered by most recent use
+    """
+    if not ensure_database_ready():
+        return []
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                SELECT simulator_id, manufacturer, model
+                FROM simulator_selections
+                ORDER BY updated_at DESC
+                LIMIT 10
+            """))
+            return [
+                {"id": row[0], "manufacturer": row[1], "model": row[2]}
+                for row in result.fetchall()
+            ]
+    except Exception as e:
+        logger.error(f"Failed to get recent simulator IDs: {e}")
+        return []
+
+
+def delete_simulator_selection(simulator_id: str) -> bool:
+    """
+    Delete a simulator selection record.
+
+    Args:
+        simulator_id: The simulator ID to delete
+
+    Returns:
+        bool: True if deletion succeeded
+    """
+    if not ensure_database_ready():
+        return False
+
+    try:
+        engine = get_engine()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                DELETE FROM simulator_selections WHERE simulator_id = :simulator_id
+            """), {"simulator_id": simulator_id})
+            conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete simulator selection: {e}")
+        return False
 
 
 # NOTE: Database initialization is now lazy-loaded via ensure_database_ready()
